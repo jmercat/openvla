@@ -3,15 +3,13 @@
 Research and development codebase for training visually-conditioned language-models (VLMs) and vision-language-action
 models (VLAs). Built on top of [TRI-ML/prismatic-vlms](https://github.com/TRI-ML/prismatic-vlms).
 
----
-
 ## 🚨 Note for Collaborators
 
-This VLA codebase is functionally a private fork of the open-source `TRI-ML/prismatic-vlms` repository. To 
-facilitate a clean workflow with the open-source VLM codebase (and any additional features added), we adopt the 
+This VLA codebase is functionally a private fork of the open-source `TRI-ML/prismatic-vlms` repository. To
+facilitate a clean workflow with the open-source VLM codebase (and any additional features added), we adopt the
 following structure:
 
-- **[Default]** `vla-core` - Treat this as the `main` branch for developing any new VLA changes; always PR to this 
+- **[Default]** `vla-core` - Treat this as the `main` branch for developing any new VLA changes; always PR to this
   branch in lieu of `main`.
 - `vlm-core` - This is the central branch for developing new VLM features (that are meant to be pushed to the public
   open-source code). Sidd/Suraj will sync upstream changes to `vla-core`.
@@ -22,7 +20,7 @@ following structure:
 *Note: TRI folks should follow the [TRI Setup Instructions](#tri-setup-instructions) below!*
 
 Fork this repository to your personal account (e.g., `moojink/prismatic-dev`). This will automatically set `vla-core`
-as your main working branch branch. Set up your remotes to track this repository `siddk/prismatic-dev`:
+as your main working branch. Set up your remotes to track this repository `siddk/prismatic-dev`:
 
 ```bash
 # This should indicate that `origin` is set to your local fork (e.g., `moojink/prismatic-dev.git`)
@@ -42,20 +40,20 @@ Cut a new (local) feature branch for anything you want to add to the Prismatic c
 git switch -c <feature-branch-name>
 
 # Do work... commit frequently...
-git add <changed files> 
+git add <changed files>
 git commit -m "<informative and clean commit message>"
 
 # Push to *local* fork (`origin`)
-git push -u origin <feature-branch-name> 
+git push -u origin <feature-branch-name>
 ```
 
-When ready, initiate PR to `siddk/prismatic-dev@vla-core`. The maintainers (Sidd/Moo Jin/Suraj/Karl) will review and 
-merge into `vla-core`. 
+When ready, initiate PR to `siddk/prismatic-dev@vla-core`. The maintainers (Sidd/Moo Jin/Suraj/Karl) will review and
+merge into `vla-core`.
 
 
 #### TRI Setup Instructions
 
-For TRI collaborators, the above process is a bit different, as you should already have an internal, local fork of the 
+For TRI collaborators, the above process is a bit different, as you should already have an internal, local fork of the
 `TRI-ML/prismatic-dev` codebase (with `vlm-core` as default branch). To contribute to the VLA codebase, do the
 following:
 
@@ -63,7 +61,7 @@ following:
 # Switch to `vla-core` on your local branch (e.g., `suraj-nair-tri/prismatic-dev@vla-core`)
 git checkout vla-core
 
-# This should indicate `origin` is set to your local fork (e.g., `suraj-nair-tri/prismatic-dev.gt`) AND that 
+# This should indicate `origin` is set to your local fork (e.g., `suraj-nair-tri/prismatic-dev.gt`) AND that
 # `tri-origin` is set to the TRI internal repo (e.g., `TRI-ML/prismatic-dev.git`).
 git remote -v
 
@@ -75,7 +73,7 @@ git remote add sk-origin https://github.com/siddk/prismatic-dev.git
 git pull sk-origin vla-core
 ```
 
-When contributing, just make sure to PR to `siddk/prismatic-dev@vla-core` **not** the TRI-ML repository.  Sidd/Suraj 
+When contributing, just make sure to PR to `siddk/prismatic-dev@vla-core` **not** the TRI-ML repository. Sidd/Suraj
 will handle keeping things in sync (including any changes to `vlm-core`).
 
 ---
@@ -83,16 +81,17 @@ will handle keeping things in sync (including any changes to `vlm-core`).
 ## Installation
 
 This repository was built using Python 3.10, but should be backwards compatible with any Python >= 3.8. We require
-PyTorch 2.1 or greater installation instructions [can be found here](https://pytorch.org/get-started/locally/). This 
-repository was developed and has been thoroughly tested with PyTorch 2.1.0, Torchvision 0.16.0, and Flash-Attention 2.3.3.
+PyTorch 2.1 or greater installation instructions [can be found here](https://pytorch.org/get-started/locally/). This
+repository was developed and has been thoroughly tested with:
+  - [2/16/24] PyTorch 2.1.0, Torchvision 0.16.0, Transformers 4.34.1, and Flash-Attention 2.3.3.
+  - [2/24/24] PyTorch 2.2.1, Torchvision 0.17.0, Transformers 4.38.1, and Flash-Attention 2.5.5.
 
-Once PyTorch has been properly installed, you can install this package locally via an editable installation (or via
-`pip install git+https://github.com/TRI-ML/prismatic-vlms`):
+Once PyTorch has been properly installed, you can install this package locally via an editable installation:
 
 ```bash
-git clone https://github.com/TRI-ML/prismatic-vlms
-cd prismatic-vlms
-pip install -e .
+cd prismatic-dev
+pip install -e ".[dev]"
+pre-commit install
 
 # Training additionally requires Flash-Attention 2 (https://github.com/Dao-AILab/flash-attention)
 pip install packaging ninja
@@ -100,7 +99,7 @@ pip install packaging ninja
 # Verify Ninja --> should return exit code "0"
 ninja --version; echo $?
 
-# Install Flash Attention 2 
+# Install Flash Attention 2
 #   =>> If you run into difficulty, try `pip cache remove flash_attn` first
 pip install flash-attn --no-build-isolation
 ```
@@ -124,7 +123,7 @@ from prismatic import load
 hf_token = Path(".hf_token").read_text().strip()
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
-# Load a pretrained VLM (either local path, or ID to auto-download from the HF Hub) 
+# Load a pretrained VLM (either local path, or ID to auto-download from the HF Hub)
 model_id = "prism-dinosiglip+7b"
 vlm = load(model_id, hf_token=hf_token)
 vlm.to(device, dtype=torch.bfloat16)
@@ -150,12 +149,12 @@ generated_text = vlm.generate(
 )
 ```
 
-For a complete terminal-based CLI for interacting with our VLMs, check out [scripts/generate.py](scripts/generate.py). 
+For a complete terminal-based CLI for interacting with our VLMs, check out [scripts/generate.py](scripts/generate.py).
 
 ## Pretrained VLMs
 
 We release **all 42** VLMs trained as part of our work, with a range of different visual representations, language
-models, data, and scale. The exhaustive set of models (with structured descriptions) can be found in 
+models, data, and scale. The exhaustive set of models (with structured descriptions) can be found in
 [`prismatic/models/registry.py](prismatic/models/registry.py) - we will continue to update this registry as we train
 additional models.
 
@@ -172,7 +171,7 @@ pprint(available_models())
 # List all Pretrained VLMs + Descriptions (by explicit labels / names from paper figures)
 pprint(available_model_names())
 
-# Print and return a targeted description of a model (by name or ID) 
+# Print and return a targeted description of a model (by name or ID)
 #   =>> See `prismatic/models/registry.py` for explicit schema
 description = get_model_description("Prism-DINOSigLIP 13B (Controlled)")
 ```
@@ -182,11 +181,11 @@ understanding and localization tasks.
 
 ---
 **Explicit Notes on Model Licensing & Commercial Use**: While all code in this repository is released under an MIT
-License, our pretrained models inherit restrictions from the _datasets_ and _underlying LMs_ we use for training. 
+License, our pretrained models inherit restrictions from the _datasets_ and _underlying LMs_ we use for training.
 
-**[02/09/24]** Our current VLMs are all derived from Llama-2, and as such are subject to the 
-[Llama Community License](https://ai.meta.com/llama/license/), which does permit commercial use. We additionally train 
-on the LLaVa Instruct Tuning data, which is synthetically generated using OpenAI's GPT-4 (subject to the 
+**[02/09/24]** Our current VLMs are all derived from Llama-2, and as such are subject to the
+[Llama Community License](https://ai.meta.com/llama/license/), which does permit commercial use. We additionally train
+on the LLaVa Instruct Tuning data, which is synthetically generated using OpenAI's GPT-4 (subject to the
 [OpenAI Terms of Use](https://openai.com/policies/terms-of-use)).
 
 As we train new models, we will update this section of the README (and the LICENSE files associated with each model)
@@ -195,10 +194,10 @@ appropriately. If there are any questions, please file an Issue!
 ## Training VLMs
 
 In addition to providing all pretrained VLMs trained in this work, we also provide full instructions and configurations
-for _reproducing all results_ (down to controlling for the batch order of examples seen during training). 
+for _reproducing all results_ (down to controlling for the batch order of examples seen during training).
 
 #### Pretraining Datasets
-For the [LLaVa v1.5 Instruct Dataset](https://github.com/haotian-liu/LLaVA/blob/main/docs/Data.md) we use for all 
+For the [LLaVa v1.5 Instruct Dataset](https://github.com/haotian-liu/LLaVA/blob/main/docs/Data.md) we use for all
 of our models, we provide an automated download script in [`scripts/preprocess.py`](scripts/preprocess.py):
 
 ```bash
@@ -209,7 +208,7 @@ python scripts/preprocess.py --dataset_id "llava-v1.5-instruct" --root_dir <PATH
 python scripts/preprocess.py --dataset_id "llava-laion-cc-sbu-558k" --root_dir <PATH-TO-DATA-ROOT>
 ```
 
-As part of our work, we also train on mixtures of datasets including 
+As part of our work, we also train on mixtures of datasets including
 [LVIS-Instruct-4V](https://arxiv.org/abs/2311.07574) and [LRV-Instruct](https://arxiv.org/abs/2306.14565). We provide
 instructions and scripts for downloading these datasets in [`scripts/additional-datasets`](scripts/additional-datasets).
 
@@ -217,16 +216,16 @@ We welcome any and all contributions and pull requests to add new datasets!
 
 #### Model Configuration & Training Script
 
-The entry point for training models is [`scripts/pretrain.py`](scripts/pretrain.py). We employ 
-[`draccus`](https://pypi.org/project/draccus/0.6/) to provide a modular, dataclass-based interface for specifying 
-model configurations; all 42 VLM configurations are in [`prismatic/conf/models.py`](prismatic/conf/models.py). 
+The entry point for training models is [`scripts/pretrain.py`](scripts/pretrain.py). We employ
+[`draccus`](https://pypi.org/project/draccus/0.6/) to provide a modular, dataclass-based interface for specifying
+model configurations; all 42 VLM configurations are in [`prismatic/conf/models.py`](prismatic/conf/models.py).
 
 We use PyTorch Fully Sharded Data Parallel (FSDP) to distribute training across GPUs, though we also provide a simpler
 Distributed Data Parallel training implementation (for smaller LM backbones, debugging). You can run a pretraining job
 via `torchrun`.
 
-As a compact example, here's how you would train a VLM derived from Vicuña-v1.5 7B, using fused DINOv2 + SigLIP 
-representations, processing non-square images with a "letterbox padding" transform across 8 GPUs on a single-node: 
+As a compact example, here's how you would train a VLM derived from Vicuña-v1.5 7B, using fused DINOv2 + SigLIP
+representations, processing non-square images with a "letterbox padding" transform across 8 GPUs on a single-node:
 
 ```bash
 # Run from the root of the repository
@@ -235,11 +234,11 @@ torchrun --standalone --nnodes 1 --nproc-per-node 8 scripts/pretrain.py \
   --model.model_id "<NAME OF NEW MODEL>" \
   --model.vision_backbone_id "dinosiglip-vit-so-384px" \
   --model.image_resize_strategy "letterbox" \
-  --model.llm_backbone_id "vicuna-v15-7b" 
+  --model.llm_backbone_id "vicuna-v15-7b"
 ```
 
 Note that specifying `model.type` is important for identifying the _base configuration_ that you want to build on top of;
-the full list of model types are available in our [config file](prismatic/conf/models.py), under the `model_id` key for 
+the full list of model types are available in our [config file](prismatic/conf/models.py), under the `model_id` key for
 each dataclass.
 
 ---
@@ -254,4 +253,3 @@ High-level overview of repository/project file-tree:
 + `Makefile` - Top-level Makefile (by default, supports linting - checking & auto-fix); extend as needed.
 + `pyproject.toml` - Full project configuration details (including dependencies), as well as tool configurations.
 + `README.md` - You are here!
-
