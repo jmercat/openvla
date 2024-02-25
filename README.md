@@ -1,25 +1,82 @@
-# Prismatic VLMs
+# Prismatic - Closing the Vision, Language, and Action Loop for Robotics
 
-[![arXiv](https://img.shields.io/badge/arXiv-2402.07865-df2a2a.svg?style=for-the-badge)](https://arxiv.org/abs/2402.07865)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.1.0-EE4C2C.svg?style=for-the-badge&logo=pytorch)](https://pytorch.org/get-started/locally/)
-[![Python](https://img.shields.io/badge/python-3.10-blue?style=for-the-badge)](https://www.python.org)
-[![License](https://img.shields.io/github/license/TRI-ML/prismatic-vlms?style=for-the-badge)](LICENSE)
+Research and development codebase for training visually-conditioned language-models (VLMs) and vision-language-action
+models (VLAs). Built on top of [TRI-ML/prismatic-vlms](https://github.com/TRI-ML/prismatic-vlms).
 
-[**Installation**](#installation) | [**Usage**](#usage) | [**Pretrained Models**](#pretrained-models) | [**Training VLMs**](#training-vlms)
+---
 
-A flexible and efficient codebase for training visually-conditioned language-models (VLMs):
+## 🚨 Note for Collaborators
 
-- **Different Visual Representations**. We natively support backbones such as [CLIP](https://arxiv.org/abs/2103.00020), 
-  [SigLIP](https://arxiv.org/abs/2303.15343), [DINOv2](https://arxiv.org/abs/2304.07193) – and even fusions of different backbones. 
-  Adding new backbones is easy via [TIMM](https://huggingface.co/timm).
-- **Base and Instruct-Tuned Language Models**. We support arbitrary instances of `AutoModelForCausalLM` including both 
-  base and instruct-tuned models (with built-in prompt handling) via [Transformers](https://github.com/huggingface/transformers). 
-  If your favorite LM isn't already supported, feel free to submit a PR!
-- **Easy Scaling**. Powered by PyTorch FSDP and Flash-Attention, we can quickly and efficiently train models from 1B - 
-  34B parameters, on different, easily configurable dataset mixtures.
+This VLA codebase is functionally a private fork of the open-source `TRI-ML/prismatic-vlms` repository. To 
+facilitate a clean workflow with the open-source VLM codebase (and any additional features added), we adopt the 
+following structure:
 
-If you're interested in rigorously evaluating existing VLMs, check our [evaluation codebase](https://github.com/TRI-ML/vlm-evaluation)
-that bundles together 11 different battle-tested vision-and-language benchmarks through a clean, automated test harness. 
+- **[Default]** `vla-core` - Treat this as the `main` branch for developing any new VLA changes; always PR to this 
+  branch in lieu of `main`.
+- `vlm-core` - This is the central branch for developing new VLM features (that are meant to be pushed to the public
+  open-source code). Sidd/Suraj will sync upstream changes to `vla-core`.
+- `main` - Treat this as a *locked branch*; it tracks the latest stable code in the open-source VLM repository.
+
+#### Default Setup Instructions
+
+*Note: TRI folks should follow the [TRI Setup Instructions](#tri-setup-instructions) below!*
+
+Fork this repository to your personal account (e.g., `moojink/prismatic-dev`). This will automatically set `vla-core`
+as your main working branch branch. Set up your remotes to track this repository `siddk/prismatic-dev`:
+
+```bash
+# This should indicate that `origin` is set to your local fork (e.g., `moojink/prismatic-dev.git`)
+git remote -v
+
+# Add `siddk/prismatic-dev.git` as a separate remote (conventionally `upstream`; I prefer `sk-origin`)
+git remote add sk-origin https://github.com/siddk/prismatic-dev.git
+
+# [Periodically] Sync any upstream changes to your local branch
+git pull sk-origin vla-core
+```
+
+Cut a new (local) feature branch for anything you want to add to the Prismatic codebase:
+
+```bash
+# Create a new (local) feature branch after syncing `vla-core`
+git switch -c <feature-branch-name>
+
+# Do work... commit frequently...
+git add <changed files> 
+git commit -m "<informative and clean commit message>"
+
+# Push to *local* fork (`origin`)
+git push -u origin <feature-branch-name> 
+```
+
+When ready, initiate PR to `siddk/prismatic-dev@vla-core`. The maintainers (Sidd/Moo Jin/Suraj/Karl) will review and 
+merge into `vla-core`. 
+
+
+#### TRI Setup Instructions
+
+For TRI collaborators, the above process is a bit different, as you should already have an internal, local fork of the 
+`TRI-ML/prismatic-dev` codebase (with `vlm-core` as default branch). To contribute to the VLA codebase, do the
+following:
+
+```bash
+# Switch to `vla-core` on your local branch (e.g., `suraj-nair-tri/prismatic-dev@vla-core`)
+git checkout vla-core
+
+# This should indicate `origin` is set to your local fork (e.g., `suraj-nair-tri/prismatic-dev.gt`) AND that 
+# `tri-origin` is set to the TRI internal repo (e.g., `TRI-ML/prismatic-dev.git`).
+git remote -v
+
+# Add `siddk/prismatic-dev.git` as a separate remote (conventionally `upstream`; I prefer `sk-origin`)
+#   => After this step, you'll have 3 remotes (`sk-origin`, `tri-origin`, and your local `origin`)
+git remote add sk-origin https://github.com/siddk/prismatic-dev.git
+
+# Treat `sk-origin` as the source of truth for `vla-core` - periodically sync
+git pull sk-origin vla-core
+```
+
+Contributing follows the same workflow as above. The only delicate part is handling/pushing VLM-related changes from 
+`vlm-core` to `vla-core`; this is something that Sidd/Suraj will handle (via a simplified PR / merge workflow).
 
 ---
 
@@ -50,9 +107,9 @@ pip install flash-attn --no-build-isolation
 
 If you run into any problems during the installation process, please file a GitHub Issue.
 
-## Usage
+## Prismatic VLM Usage
 
-Once installed, loading and running inference with pretrained `prismatic` models is easy:
+Once installed, loading and running inference with pretrained `prismatic` VLMs is easy:
 
 ```python
 import requests
@@ -95,7 +152,7 @@ generated_text = vlm.generate(
 
 For a complete terminal-based CLI for interacting with our VLMs, check out [scripts/generate.py](scripts/generate.py). 
 
-## Pretrained Models
+## Pretrained VLMs
 
 We release **all 42** VLMs trained as part of our work, with a range of different visual representations, language
 models, data, and scale. The exhaustive set of models (with structured descriptions) can be found in 
@@ -198,17 +255,3 @@ High-level overview of repository/project file-tree:
 + `pyproject.toml` - Full project configuration details (including dependencies), as well as tool configurations.
 + `README.md` - You are here!
 
----
-
-#### Citation 
-
-If you find our code or models useful in your work, please cite [our paper](https://arxiv.org/abs/2402.07865):
-
-```bibtex
-@article{karamcheti2024prismatic,
-  title = {Prismatic VLMs: Investigating the Design Space of Visually-Conditioned Language Models},
-  author = {Siddharth Karamcheti and Suraj Nair and Ashwin Balakrishna and Percy Liang and Thomas Kollar and Dorsa Sadigh},
-  journal = {arXiv preprint arXiv:2402.07865},
-  year = {2024},
-}
-```
