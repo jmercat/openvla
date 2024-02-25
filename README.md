@@ -1,4 +1,4 @@
-# Prismatic - Closing the Vision, Language, and Action Loop for Robotics
+# Prismatic - Vision-Language-Action Models for Robotics
 
 Research and development codebase for training visually-conditioned language-models (VLMs) and vision-language-action
 models (VLAs). Built on top of [TRI-ML/prismatic-vlms](https://github.com/TRI-ML/prismatic-vlms).
@@ -75,8 +75,8 @@ git remote add sk-origin https://github.com/siddk/prismatic-dev.git
 git pull sk-origin vla-core
 ```
 
-Contributing follows the same workflow as above. The only delicate part is handling/pushing VLM-related changes from 
-`vlm-core` to `vla-core`; this is something that Sidd/Suraj will handle (via a simplified PR / merge workflow).
+When contributing, just make sure to PR to `siddk/prismatic-dev@vla-core` **not** the TRI-ML repository.  Sidd/Suraj 
+will handle keeping things in sync (including any changes to `vlm-core`).
 
 ---
 
