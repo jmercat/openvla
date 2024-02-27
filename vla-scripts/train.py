@@ -107,7 +107,11 @@ def train(cfg: TrainConfig) -> None:
 
     # Configure Unique Run Name & Save Directory
     vla_id = cfg.vla.vla_id
-    cfg.run_id = f"{vla_id}+x{cfg.seed}" if cfg.run_id is None else cfg.run_id
+    cfg.run_id = (
+        f"{vla_id}+n{cfg.vla.expected_world_size // 8}+b{cfg.per_device_batch_size}+x{cfg.seed}"
+        if cfg.run_id is None
+        else cfg.run_id
+    )
 
     # Start =>> Build Directories and Set Randomness
     overwatch.info('"Do or do not; there is no try."', ctx_level=1)

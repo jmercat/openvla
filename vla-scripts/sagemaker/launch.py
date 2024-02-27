@@ -36,13 +36,13 @@ LUSTRE_PARAMETERS = {
 class LaunchConfig:
     # fmt: off
     job_name: str = "sk-openvla"                                        # Base Name for Job in Sagemaker Dashboard
-    instance_count: int = 4                                             # Number of Nodes for Multi-Node Training
+    instance_count: int = 1                                             # Number of Nodes for Multi-Node Training
     instance_type: str = "ml.p4de.24xlarge"                             # Instance Type (default: p4de.24xlarge)
     instance_n_gpus: int = 8                                            # Number of GPUs per Instance
 
     # OpenVLA Training Parameters
     vla_type: str = (                                                   # Unique VLA ID (specifies config)
-        VLARegistry.FREEZE_DINOSIGLIP_384PX_MX_BRIDGE_RT1.vla_id
+        VLARegistry.LLAVA_REPRO_MX_BRIDGE.vla_id
     )
 
     # Updated Paths for Data / Runs (on Sagemaker Volume)
