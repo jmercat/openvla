@@ -58,7 +58,7 @@ class VLAConfig(ChoiceRegistry):
 # === [8 GPU] Base VLA =>> LLaVa (Reproduction) + Bridge ===
 @dataclass
 class Exp_LLaVa15_Bridge(VLAConfig):
-    vla_id: str = "llava-repro+bridge+7b"
+    vla_id: str = "reproduction-llava-v15+mx-bridge"
     base_vlm: Union[str, Path] = "reproduction-llava-v15+7b"
     freeze_vision_backbone: bool = False
 
@@ -71,8 +71,8 @@ class Exp_LLaVa15_Bridge(VLAConfig):
     max_steps: Optional[int] = None
 
     expected_world_size: int = 8
-    global_batch_size: int = 128
-    per_device_batch_size: int = 16
+    global_batch_size: int = 256
+    per_device_batch_size: int = 32
 
     learning_rate: float = 5e-6
     weight_decay: float = 0.0
@@ -96,6 +96,10 @@ class Exp_DINOSigLIP_384px_Bridge(Exp_LLaVa15_Bridge):
     vla_id: str = "prism-dinosiglip+mx-bridge"
     base_vlm: Union[str, Path] = "prism-dinosiglip+7b"
 
+    # Note =>> Unfrozen DINOSigLIP OOMs w/ Per-Device Batch Size of 32!
+    global_batch_size: int = 192
+    per_device_batch_size: int = 24
+
 
 # === [8 GPU] Frozen Vision Backbone =>> DINO-SigLIP @ 384px + Bridge ===
 @dataclass
@@ -114,7 +118,7 @@ class Exp_SigLIP_224px_Bridge_RT1(Exp_LLaVa15_Bridge):
     data_mix: str = "bridge_rt_1"
 
     expected_world_size: int = 16
-    global_batch_size: int = 256
+    global_batch_size: int = 512
 
 
 # === [32 GPU] Bridge + RT-1 =>> Frozen DINO-SigLIP @ 384px + [Bridge, RT-1] ===
@@ -127,7 +131,7 @@ class Exp_FreezeVIT_DINOSigLIP_384px_Bridge_RT1(Exp_LLaVa15_Bridge):
     data_mix: str = "bridge_rt_1"
 
     expected_world_size: int = 32
-    global_batch_size: int = 512
+    global_batch_size: int = 1024
 
 
 # === Define a VLA Registry Enum for Reference & Validation ===
