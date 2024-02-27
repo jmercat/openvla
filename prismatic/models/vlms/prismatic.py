@@ -90,6 +90,7 @@ class PrismaticVLM(VLM):
         llm_backbone: LLMBackbone,
         enable_mixed_precision_training: bool = True,
         arch_specifier: str = "gelu-mlp",
+        freeze_weights: bool = True,
     ) -> PrismaticVLM:
         """Initialize a PrismaticVLM from a pretrained checkpoint, freezing all weights, tailored for inference."""
         vlm = cls(
@@ -110,8 +111,9 @@ class PrismaticVLM(VLM):
         vlm.llm_backbone.load_state_dict(model_state_dict["llm_backbone"])
 
         # Freeze Weights
-        vlm.requires_grad_(False)
-        vlm.eval()
+        if freeze_weights:
+            vlm.requires_grad_(False)
+            vlm.eval()
 
         return vlm
 
@@ -127,7 +129,7 @@ class PrismaticVLM(VLM):
             => "align" --> vision_backbone*, llm_backbone* are frozen; only the `projector` is trained.
             => "finetune" --> vision_backbone* is frozen; both `projector` and `llm_backbone` are trained.
 
-        :param stage: Pretraining stage in < "align" | "finetune" | "full-finetune" >
+        :param stage: Pretraining stage in < "align" | "finetune" | "full-finetune" | "vla-train" | "vla-full-train" >
         """
         if stage == "align":
             self.vision_backbone.requires_grad_(False)
@@ -145,7 +147,7 @@ class PrismaticVLM(VLM):
             overwatch.info(f"[Frozen]    🥶 =>> LLM Backbone `{self.llm_backbone.identifier}`", ctx_level=1)
             overwatch.info(f"[TRAINABLE] 🔥 =>> Projector `{self.arch_specifier}`", ctx_level=1)
 
-        elif stage == "finetune":
+        elif stage in {"finetune", "vla-train"}:
             self.vision_backbone.requires_grad_(False)
             self.llm_backbone.requires_grad_(True)
             self.projector.requires_grad_(True)
@@ -161,7 +163,7 @@ class PrismaticVLM(VLM):
             overwatch.info(f"[TRAINABLE] 🔥 =>> LLM Backbone `{self.llm_backbone.identifier}`", ctx_level=1)
             overwatch.info(f"[TRAINABLE] 🔥 =>> Projector `{self.arch_specifier}`", ctx_level=1)
 
-        elif stage == "full-finetune":
+        elif stage in {"full-finetune", "vla-full-train"}:
             self.vision_backbone.dtype = torch.float32
             self.vision_backbone.requires_grad_(True)
             self.llm_backbone.requires_grad_(True)

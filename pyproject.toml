@@ -35,13 +35,19 @@ dependencies = [
     "einops",
     # "flash_attn>=2.3.3",  # Here for documentation -- install *AFTER* editable install (follow README)
     "jsonlines",
+    "matplotlib",
     "rich",
+    "sentencepiece",
     "timm>=0.9.10",
     "torch>=2.1.0",
     "torchvision>=0.16.0",
     "torchaudio",
     "transformers>=4.38.1",
-    "wandb"
+    "wandb",
+    "tensorflow==2.15.0",
+    "tensorflow_datasets==4.9.3",
+    "tensorflow_graphics==2021.12.3",
+    "dlimp @ git+https://github.com/kvablack/dlimp@ad72ce3a9b414db2185bc0b38461d4101a65477a"
 ]
 
 [project.optional-dependencies]

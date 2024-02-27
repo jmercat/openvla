@@ -46,7 +46,10 @@ def get_model_description(model_id_or_name: str) -> str:
 
 # === Load Pretrained Model ===
 def load(
-    model_id_or_path: Union[str, Path], hf_token: Optional[str] = None, cache_dir: Optional[Union[str, Path]] = None
+    model_id_or_path: Union[str, Path],
+    hf_token: Optional[str] = None,
+    cache_dir: Optional[Union[str, Path]] = None,
+    load_for_training: bool = False,
 ) -> PrismaticVLM:
     """Loads a pretrained PrismaticVLM from either local disk or the HuggingFace Hub."""
     if os.path.isdir(model_id_or_path):
@@ -61,10 +64,11 @@ def load(
             raise ValueError(f"Couldn't find `{model_id_or_path = }; check `prismatic.available_model_names()`")
 
         overwatch.info(f"Downloading `{(model_id := GLOBAL_REGISTRY[model_id_or_path]['model_id'])} from HF Hub")
-        config_json = hf_hub_download(repo_id=HF_HUB_REPO, filename=f"{model_id}/config.json", cache_dir=cache_dir)
-        checkpoint_pt = hf_hub_download(
-            repo_id=HF_HUB_REPO, filename=f"{model_id}/checkpoints/latest-checkpoint.pt", cache_dir=cache_dir
-        )
+        with overwatch.local_zero_first():
+            config_json = hf_hub_download(repo_id=HF_HUB_REPO, filename=f"{model_id}/config.json", cache_dir=cache_dir)
+            checkpoint_pt = hf_hub_download(
+                repo_id=HF_HUB_REPO, filename=f"{model_id}/checkpoints/latest-checkpoint.pt", cache_dir=cache_dir
+            )
 
     # Load Model Config from `config.json`
     with open(config_json, "r") as f:
@@ -93,17 +97,18 @@ def load(
         model_cfg["llm_backbone_id"],
         llm_max_length=model_cfg.get("llm_max_length", 2048),
         hf_token=hf_token,
-        inference_mode=True,
+        inference_mode=not load_for_training,
     )
 
     # Load VLM using `from_pretrained` (clobbers HF syntax... eventually should reconcile)
-    overwatch.info(f"Loading VLM [bold blue]{model_cfg['model_id']}[/] from Checkpoint; Freezing Weights 🥶")
+    overwatch.info(f"Loading VLM [bold blue]{model_cfg['model_id']}[/] from Checkpoint")
     vlm = PrismaticVLM.from_pretrained(
         checkpoint_pt,
         model_cfg["model_id"],
         vision_backbone,
         llm_backbone,
         arch_specifier=model_cfg["arch_specifier"],
+        freeze_weights=not load_for_training,
     )
 
     return vlm
