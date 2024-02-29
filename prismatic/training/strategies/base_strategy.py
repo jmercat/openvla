@@ -344,6 +344,9 @@ class TrainingStrategy(ABC):
                     self.lr_scheduler.step()
                     self.optimizer.zero_grad()
 
+                    # Override epoch value using number of completed gradient steps
+                    epoch = (metrics.global_step + 1) // (len(vla_dataset) // self.global_batch_size)
+
                     # Push Metrics
                     metrics.commit(
                         global_step=metrics.global_step + 1, epoch=epoch, lr=self.lr_scheduler.get_last_lr()[0]
