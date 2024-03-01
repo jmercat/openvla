@@ -54,7 +54,7 @@ class TrainConfig:
     data_root_dir: Path = Path(                                     # Path to Open-X dataset directory
         "/mnt/fsx/surajnair/datasets/openx_processed"
     )
-    run_root_dir: Path = Path("/mnt/fsx/x-openvla/runs")            # Path to directory to store logs & checkpoints
+    run_root_dir: Path = Path("./runs")                             # Path to directory to store logs & checkpoints
 
     # Run Arguments
     stage: str = "vla-train"                                        # Train Stage (only `vla-train` supported for now)
