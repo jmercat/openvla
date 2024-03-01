@@ -465,14 +465,22 @@ def make_interleaved_dataset(
         dataset_sizes.append(dataset_statistics["num_transitions"])
         all_dataset_statistics.append(dataset_statistics)
 
+    # Get the indices of the "primary" datasets (i.e., datasets with sample_weight == 1.0)
+    primary_dataset_indices = []
+    for i, weight in enumerate(sample_weights):
+        if sample_weights[i] == 1.0:
+            primary_dataset_indices.append(i)
+    primary_dataset_indices = np.array(primary_dataset_indices)
+
     # Balance and Normalize Weights
     if balance_weights:
         sample_weights = np.array(sample_weights) * np.array(dataset_sizes)
     sample_weights = np.array(sample_weights) / np.sum(sample_weights)
     pprint_data_mixture(dataset_kwargs_list, sample_weights)
 
-    # Effective Dataset Length = Samples until each dataset has completed at least one epoch
-    dataset_len = int((np.array(dataset_sizes) / sample_weights).max())
+    # Effective Dataset Length = Number of samples until each dataset has completed at least one epoch
+    # (only counting the "primary" datasets, i.e., datasets with sample_weight == 1.0)
+    dataset_len = int((np.array(dataset_sizes) / sample_weights)[primary_dataset_indices].max())
 
     # Allocate Threads based on Weights
     threads_per_dataset = allocate_threads(traj_transform_threads, sample_weights)

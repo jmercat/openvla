@@ -278,93 +278,95 @@ class TrainingStrategy(ABC):
             leave=False,
             disable=not overwatch.is_rank_zero(),
         ) as progress:
-            for epoch in range(self.epochs):
-                self.vlm.train()
+            self.vlm.train()
 
-                # Zero Gradients (just in case)
+            # Zero Gradients (just in case)
+            self.optimizer.zero_grad()
+
+            # Note that we'll unpack batch (and let AMP/FSDP do its thing) in the VLM.forward() call
+            #   => Basically, if we're using mixed precision (or not), autocast()/FSDP will move to device!
+            for batch in dataloader:
+                # [Contract] self.vlm.forward() must automatically compute `loss` and return!
+                with torch.autocast(
+                    "cuda", dtype=self.mixed_precision_dtype, enabled=self.enable_mixed_precision_training
+                ):
+                    output: CausalLMOutputWithPast = self.vlm(
+                        input_ids=batch["input_ids"],
+                        attention_mask=batch["attention_mask"],
+                        pixel_values=batch["pixel_values"],
+                        labels=batch["labels"],
+                    )
+                    loss = output.loss
+
+                # Commit Loss =>> Backward!
+                metrics.commit(loss=loss)
+                loss.backward()
+
+                # === Compute Action Token Accuracy & L1 Loss ===
+
+                # To compute action token accuracy, we need to identify the locations of the action tokens
+                # in both `output.logits` and `batch["labels"]`. We know that when "right" padding, we
+                # insert `self.vlm.vision_backbone.num_patches` at index 1.
+                #
+                # Computing `action_prediction_accuracy` is then pretty straightforward:
+                #   1) Extract "aligned" predictions & labels
+                #   2) Compute boolean "mask" where "labels > 2" (where 2 is ID for `EOS_TOKEN`)
+                #           => If masking out EOS, then it's just "labels != -100 (IGNORE_INDEX)
+                #   3) Compute masked accuracy as `(preds == logits) & mask` --> sum/divide by # unmasked!
+                action_preds = output.logits[:, self.vlm.vision_backbone.num_patches : -1].argmax(dim=2)
+                action_gt = batch["labels"][:, 1:].to(action_preds.device)
+                mask = action_gt > action_tokenizer.action_token_begin_idx
+
+                # Compute Accuracy
+                correct_preds = (action_preds == action_gt) & mask
+                action_accuracy = correct_preds.sum().float() / mask.sum().float()
+
+                # Compute L1 Loss on Predicted (Continuous) Actions
+                continuous_actions_pred = torch.tensor(
+                    action_tokenizer.decode_token_ids_to_actions(action_preds[mask].cpu().numpy())
+                )
+                continuous_actions_gt = torch.tensor(
+                    action_tokenizer.decode_token_ids_to_actions(action_gt[mask].cpu().numpy())
+                )
+                action_l1_loss = torch.nn.functional.l1_loss(continuous_actions_pred, continuous_actions_gt)
+
+                # Commit Metrics
+                metrics.commit(action_accuracy=action_accuracy, l1_loss=action_l1_loss, update_step_time=True)
+
+                # === Gradient Step ===
+
+                # Clip Gradients --> this is custom, per-strategy because of DDP vs. FSDP locality assumptions
+                self.clip_grad_norm()
+
+                # Optimizer & LR Scheduler Step
+                self.optimizer.step()
+                self.lr_scheduler.step()
                 self.optimizer.zero_grad()
 
-                # Note that we'll unpack batch (and let AMP/FSDP do its thing) in the VLM.forward() call
-                #   => Basically, if we're using mixed precision (or not), autocast()/FSDP will move to device!
-                for batch in dataloader:
-                    # [Contract] self.vlm.forward() must automatically compute `loss` and return!
-                    with torch.autocast(
-                        "cuda", dtype=self.mixed_precision_dtype, enabled=self.enable_mixed_precision_training
-                    ):
-                        output: CausalLMOutputWithPast = self.vlm(
-                            input_ids=batch["input_ids"],
-                            attention_mask=batch["attention_mask"],
-                            pixel_values=batch["pixel_values"],
-                            labels=batch["labels"],
-                        )
-                        loss = output.loss
+                # Compute epoch value using number of completed gradient steps
+                epoch = (metrics.global_step + 1) // (len(vla_dataset) // self.global_batch_size)
 
-                    # Commit Loss =>> Backward!
-                    metrics.commit(loss=loss)
-                    loss.backward()
+                # Push Metrics
+                metrics.commit(
+                    global_step=metrics.global_step + 1, epoch=epoch, lr=self.lr_scheduler.get_last_lr()[0]
+                )
+                status = metrics.push()
 
-                    # === Compute Action Token Accuracy & L1 Loss ===
-
-                    # To compute action token accuracy, we need to identify the locations of the action tokens
-                    # in both `output.logits` and `batch["labels"]`. We know that when "right" padding, we
-                    # insert `self.vlm.vision_backbone.num_patches` at index 1.
-                    #
-                    # Computing `action_prediction_accuracy` is then pretty straightforward:
-                    #   1) Extract "aligned" predictions & labels
-                    #   2) Compute boolean "mask" where "labels > 2" (where 2 is ID for `EOS_TOKEN`)
-                    #           => If masking out EOS, then it's just "labels != -100 (IGNORE_INDEX)
-                    #   3) Compute masked accuracy as `(preds == logits) & mask` --> sum/divide by # unmasked!
-                    action_preds = output.logits[:, self.vlm.vision_backbone.num_patches : -1].argmax(dim=2)
-                    action_gt = batch["labels"][:, 1:].to(action_preds.device)
-                    mask = action_gt > action_tokenizer.action_token_begin_idx
-
-                    # Compute Accuracy
-                    correct_preds = (action_preds == action_gt) & mask
-                    action_accuracy = correct_preds.sum().float() / mask.sum().float()
-
-                    # Compute L1 Loss on Predicted (Continuous) Actions
-                    continuous_actions_pred = torch.tensor(
-                        action_tokenizer.decode_token_ids_to_actions(action_preds[mask].cpu().numpy())
-                    )
-                    continuous_actions_gt = torch.tensor(
-                        action_tokenizer.decode_token_ids_to_actions(action_gt[mask].cpu().numpy())
-                    )
-                    action_l1_loss = torch.nn.functional.l1_loss(continuous_actions_pred, continuous_actions_gt)
-
-                    # Commit Metrics
-                    metrics.commit(action_accuracy=action_accuracy, l1_loss=action_l1_loss, update_step_time=True)
-
-                    # === Gradient Step ===
-
-                    # Clip Gradients --> this is custom, per-strategy because of DDP vs. FSDP locality assumptions
-                    self.clip_grad_norm()
-
-                    # Optimizer & LR Scheduler Step
-                    self.optimizer.step()
-                    self.lr_scheduler.step()
-                    self.optimizer.zero_grad()
-
-                    # Push Metrics
-                    metrics.commit(
-                        global_step=metrics.global_step + 1, epoch=epoch, lr=self.lr_scheduler.get_last_lr()[0]
-                    )
-                    status = metrics.push()
-
-                    # Check for Save Interval or Max Steps & Save Checkpoint
-                    if (terminate := (self.max_steps is not None and metrics.global_step >= self.max_steps)) or (
-                        (metrics.global_step % save_interval) == 0
-                    ):
-                        self.save_checkpoint(metrics.run_dir, metrics.global_step, epoch, loss.item())
-                        dist.barrier()
-
-                        if terminate:
-                            return
-
-                    # Update Progress Bar
-                    progress.update()
-                    progress.set_description(status)
-
-                # Save checkpoint at end of each epoch (if `self.max_steps` is None)
-                if self.max_steps is None:
+                # Check for Save Interval or Max Steps & Save Checkpoint
+                if (terminate := (self.max_steps is not None and metrics.global_step >= self.max_steps)) or (
+                    (metrics.global_step % save_interval) == 0
+                ):
                     self.save_checkpoint(metrics.run_dir, metrics.global_step, epoch, loss.item())
                     dist.barrier()
+
+                    if terminate:
+                        return
+
+                # Update Progress Bar
+                progress.update()
+                progress.set_description(status)
+
+            # Save checkpoint at end of each epoch (if `self.max_steps` is None)
+            if self.max_steps is None:
+                self.save_checkpoint(metrics.run_dir, metrics.global_step, epoch, loss.item())
+                dist.barrier()
