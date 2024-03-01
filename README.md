@@ -86,7 +86,9 @@ repository was developed and has been thoroughly tested with:
   - [2/16/24] PyTorch 2.1.0, Torchvision 0.16.0, Transformers 4.34.1, and Flash-Attention 2.3.3.
   - [2/24/24] PyTorch 2.2.1, Torchvision 0.17.0, Transformers 4.38.1, and Flash-Attention 2.5.5.
 
-Once PyTorch has been properly installed, you can install this package locally via an editable installation:
+Once PyTorch has been properly installed (e.g., via
+`conda install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia`), you can install this
+package locally via an editable installation:
 
 ```bash
 cd prismatic-dev
@@ -193,12 +195,14 @@ appropriately. If there are any questions, please file an Issue!
 
 ## Training VLMs
 
-**NOTE: This section describes training VLMs — not VLA models for robotics. For VLA model training, see the [Training VLA Models section](#training-vla-models).**
+*Note: This section describes training VLMs — not VLA models for robotics. For VLA training, see
+[Training VLAs](#training-vlas).*
 
 In addition to providing all pretrained VLMs trained in this work, we also provide full instructions and configurations
 for _reproducing all results_ (down to controlling for the batch order of examples seen during training).
 
 #### Pretraining Datasets
+
 For the [LLaVa v1.5 Instruct Dataset](https://github.com/haotian-liu/LLaVA/blob/main/docs/Data.md) we use for all
 of our models, we provide an automated download script in [`scripts/preprocess.py`](scripts/preprocess.py):
 
@@ -245,59 +249,58 @@ each dataclass.
 
 ---
 
-## Training VLA Models
+## Training VLAs
 
-### Setup & Training Instructions
+We provide full instructions and configurations for training different VLA policies on (arbitrary subsets of) the
+[Open-X Embodiment (OXE) Dataset](https://robotics-transformer-x.github.io/). Setup instructions are the same as above (see
+[Installation](#installation)), but if you run into any issues, see [VLA Troubleshooting](#vla-troubleshooting) below.
 
-If at any point you run into errors, see the [VLA Troubleshooting section](#vla-troubleshooting) below.
+#### VLA Pretraining Datasets
 
-1. Set up the conda env:
-    ```bash
-    git clone https://github.com/siddk/prismatic-dev
-    cd prismatic-dev
-    conda create -n prisma python=3.10 -y
-    conda activate prisma
-    conda install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia -y # CHANGE ME: Install PyTorch for your device.
-    pip install -e ".[dev]"
+For the bulk of our experiments, we use [the `OXE_MAGIC_SOUP` tagged mixture](https://github.com/siddk/prismatic-dev/blob/vla-core/prismatic/vla/datasets/rlds/oxe/mixtures.py#L112)
+of Open-X Embodiment. We download and preprocess them in [RLDS format](https://github.com/google-research/rlds)
+following [Karl's custom script](https://github.com/kpertsch/rlds_dataset_mod/blob/main/prepare_open_x.sh).
+- **Important**: For the Bridge V2 component dataset, the version in OXE is out of date (as of 12/20/2023). Instead,
+  you should download the dataset from the
+  [official website](https://rail.eecs.berkeley.edu/datasets/bridge_release/data/tfds/bridge_dataset/) and place it
+  under the subdirectory `bridge_orig/`. Replace any reference to `bridge` in the OXE code with `bridge_orig`.
 
-    # Training additionally requires Flash-Attention 2 (https://github.com/Dao-AILab/flash-attention)
-    pip install packaging ninja
+#### VLA Configuration & Training Script
 
-    # Verify Ninja --> should return exit code "0"
-    ninja --version; echo $?
+The entry point for VLA training is [`vla-scripts/train.py`](vla-scripts/train.py). We employ
+[`draccus`](https://pypi.org/project/draccus/0.6/) to provide a modular, dataclass-based interface for specifying
+VLA configurations; existing VLA configurations are in [`prismatic/conf/vla.py`](prismatic/conf/vla.py). You can add
+your own training configuration and refer to it using the `--vla.type` command line argument.
 
-    # Install Flash Attention 2
-    #   =>> If you run into difficulty, try `pip cache remove flash_attn` first
-    pip install flash-attn --no-build-isolation
-    ```
+We use PyTorch Fully Sharded Data Parallel (FSDP) to distribute training across GPUs. Launch training jobs via
+`torchrun`:
 
-2. Download the [`OXE_MAGIC_SOUP`](https://github.com/siddk/prismatic-dev/blob/1a40225db9af802810382392a041d07615baefe7/prismatic/vla/datasets/rlds/oxe/mixtures.py#L112) subset of the [Open X-Embodiment (OXE)](https://robotics-transformer-x.github.io/) datasets, and preprocess them to a format compatible with our training code. Both steps can be done using Karl's dataset downloading and modification script from [this repo](https://github.com/kpertsch/rlds_dataset_mod) (see script [here](https://github.com/kpertsch/rlds_dataset_mod/blob/main/prepare_open_x.sh)).
-    * <ins>IMPORTANT</ins>: For Bridge V2, the version uploaded to the OXE mixture seems to be out of date (as of 2023-12-20), so you should download the original dataset from the project website (from [here](https://rail.eecs.berkeley.edu/datasets/bridge_release/data/tfds/bridge_dataset/)) and remove the reference to `bridge` in Karl's OXE downloading script ([here](https://github.com/kpertsch/rlds_dataset_mod/blob/9c81aef1fe1ea0bb447536ecf74840f1da7224d7/prepare_open_x.sh#L28)). Rename `bridge_dataset` to `bridge_orig` and move the folder into a folder containing all the preprocessed/modified datasets.
+```bash
+# Train VLA on Bridge V2 with the Prismatic SigLIP 224px Backbone on a Single Node (w/ 8 GPUs)
+#   => Note: To log / access the `openvla` project under the `stanford-voltron` entity, ask Sidd/Suraj/Moo Jin!
+torchrun --standalone --nnodes 1 --nproc-per-node 8 vla-scripts/train.py \
+  --vla.type "siglip-224px+mx-bridge" \
+  --data_root_dir <PATH TO OXE DATA ROOT> \
+  --run_root_dir <PATH TO LOG/CHECKPOINT ROOT> \
+  --wandb_project "openvla" \
+  --wandb_entity "stanford-voltron"
+```
 
-3. Start training. Below is an example of how you would train a reproduction of the original LLaVA model on Bridge data only. Change arguments as needed. Also, see the [VLA training config file](https://github.com/siddk/prismatic-dev/blob/vla-core/prismatic/conf/vla.py) for various experiment configurations. You can add your own training configuration and refer to it using the `--vla.type` arg below.
-    ```
-    # Train Reproduction 7B LLaVA (336px vision backbone) on Bridge
-    torchrun --standalone --nnodes 1 --nproc-per-node 8 vla-scripts/train.py \
-    --vla.type "reproduction-llava-v15+mx-bridge" \
-    --data_root_dir /scr-ssd/moojink/data/oxe/modified \
-    --wandb_project open_vla \
-    --wandb_entity moojink \
-    --seed 7
-    ```
+#### VLA Troubleshooting
 
-### VLA Troubleshooting
+The following are a list of known problems and corresponding fixes:
 
-* PROBLEM: You get an error while loading a dataset that looks like this:
-  ```
-  FileNotFoundError: Failed to construct dataset "fractal20220817_data", builder_kwargs "{'data_dir': '/path/to/processed/datasets/'}": Could not load dataset info from fractal20220817_data/0.1.0/dataset_info.json
-  ```
-  * SOLUTION: Downgrade `tensorflow-datasets` via `pip install tensorflow-datasets==4.9.3`.
+```bash
+FileNotFoundError: Failed to construct dataset "fractal20220817_data", builder_kwargs "{'data_dir': '/path/to/processed/datasets/'}": Could not load dataset info from fractal20220817_data/0.1.0/dataset_info.json
+```
+- **Fix**: Downgrade `tensorflow-datasets` via `pip install tensorflow-datasets==4.9.3`.
 
-* PROBLEM: You get an error related to the `DLataset` class from the `dlimp` package that looks like this:
-  ```
-  AttributeError: 'DLataset' object has no attribute 'traj_map'. Did you mean: 'flat_map'?
-  ```
-  * SOLUTION: Upgrade `dlimp` to the newest version. You may have to `--force-reinstall` like so: `pip install --no-deps --force-reinstall git+https://github.com/kvablack/dlimp@ad72ce3a9b414db2185bc0b38461d4101a65477a`
+
+```bash
+AttributeError: 'DLataset' object has no attribute 'traj_map'. Did you mean: 'flat_map'?
+```
+- **Fix**: Upgrade `dlimp` to the newest version. You may have to `--force-reinstall` like so:
+`pip install --no-deps --force-reinstall git+https://github.com/kvablack/dlimp@ad72ce3a9b414db2185bc0b38461d4101a65477a`
 
 ---
 
