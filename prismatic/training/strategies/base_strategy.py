@@ -264,12 +264,6 @@ class TrainingStrategy(ABC):
             worker_init_fn=self.worker_init_fn,
         )
 
-        # Max Steps vs. Epochs Computation
-        steps_per_epoch = len(dataloader) // self.grad_accumulation_steps
-        if self.max_steps is not None and steps_per_epoch < self.max_steps:
-            # Just set `epochs` to some large number --> we'll short-circuit based on steps anyway
-            self.epochs = 100
-
         # === Train ===
         status = metrics.get_status()
         with tqdm(
@@ -283,13 +277,16 @@ class TrainingStrategy(ABC):
             # Zero Gradients (just in case)
             self.optimizer.zero_grad()
 
-            # Note that we'll unpack batch (and let AMP/FSDP do its thing) in the VLM.forward() call
-            #   => Basically, if we're using mixed precision (or not), autocast()/FSDP will move to device!
+            # [Contract] DataLoader wraps RLDS Loader (`.as_numpy_iterator() =>> implicit `.repeat()`)
+            #   => This means looping over the DataLoader is basically "infinite" (so no outer loop over epochs).
+            #      Slightly breaks default PyTorch semantics, which is why we adaptively compute `epoch` below.
             for batch in dataloader:
-                # [Contract] self.vlm.forward() must automatically compute `loss` and return!
+                # Note that we'll unpack batch (and let AMP/FSDP do its thing) in the VLM.forward() call
+                #   => Basically, if we're using mixed precision (or not), autocast()/FSDP will move to device!
                 with torch.autocast(
                     "cuda", dtype=self.mixed_precision_dtype, enabled=self.enable_mixed_precision_training
                 ):
+                    # [Contract] self.vlm.forward() must automatically compute `loss` and return!
                     output: CausalLMOutputWithPast = self.vlm(
                         input_ids=batch["input_ids"],
                         attention_mask=batch["attention_mask"],
@@ -347,9 +344,7 @@ class TrainingStrategy(ABC):
                 epoch = (metrics.global_step + 1) // (len(vla_dataset) // self.global_batch_size)
 
                 # Push Metrics
-                metrics.commit(
-                    global_step=metrics.global_step + 1, epoch=epoch, lr=self.lr_scheduler.get_last_lr()[0]
-                )
+                metrics.commit(global_step=metrics.global_step + 1, epoch=epoch, lr=self.lr_scheduler.get_last_lr()[0])
                 status = metrics.push()
 
                 # Check for Save Interval or Max Steps & Save Checkpoint
@@ -365,8 +360,3 @@ class TrainingStrategy(ABC):
                 # Update Progress Bar
                 progress.update()
                 progress.set_description(status)
-
-            # Save checkpoint at end of each epoch (if `self.max_steps` is None)
-            if self.max_steps is None:
-                self.save_checkpoint(metrics.run_dir, metrics.global_step, epoch, loss.item())
-                dist.barrier()
