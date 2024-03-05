@@ -109,6 +109,8 @@ class PrismaticVLM(VLM):
 
         vlm.projector.load_state_dict(model_state_dict["projector"])
         vlm.llm_backbone.load_state_dict(model_state_dict["llm_backbone"])
+        if "vision_backbone" in model_state_dict.keys():
+            vlm.vision_backbone.load_state_dict(model_state_dict["vision_backbone"])
 
         # Freeze Weights
         if freeze_weights:
@@ -540,6 +542,11 @@ class PrismaticVLM(VLM):
 
         # Prepare Inputs
         input_ids = tokenizer(prompt_text, truncation=True, return_tensors="pt").input_ids.to(self.device)
+        # Note (Moo Jin): We need to add this special empty token ('') after the colon (':') token in "ASSISTANT:"
+        # in order for the predictions to match the training configuration and be accurate.
+        input_ids = torch.cat((input_ids, torch.unsqueeze(torch.Tensor([29871]).long(), dim=0).to(self.device)), 1).to(
+            self.device
+        )
         pixel_values = image_transform(image)
         if isinstance(pixel_values, torch.Tensor):
             pixel_values = pixel_values[None, ...].to(self.device)
