@@ -42,7 +42,7 @@ class LaunchConfig:
 
     # OpenVLA Training Parameters
     vla_type: str = (                                                   # Unique VLA ID (specifies config)
-        VLARegistry.LLAVA_REPRO_MX_BRIDGE.vla_id
+        VLARegistry.LR_1E5_SIGLIP_224PX_ICY_MX_BRIDGE.vla_id
     )
 
     # Updated Paths for Data / Runs (on Sagemaker Volume)

@@ -134,6 +134,40 @@ class Exp_FreezeVIT_DINOSigLIP_384px_Bridge_RT1(Exp_LLaVa15_Bridge):
     global_batch_size: int = 1024
 
 
+# === [8 GPU] LLaVa (Reproduction) Frozen Vision Backbone + Bridge ===
+@dataclass
+class Exp_FreezeVIT_LLaVa15_Bridge(Exp_LLaVa15_Bridge):
+    vla_id: str = "reproduction-llava-v15-icy+mx-bridge"
+    freeze_vision_backbone: bool = True
+
+
+# === [8 GPU] SigLIP 224px Frozen Vision Backbone + Bridge ===
+@dataclass
+class Exp_FreezeVIT_SigLIP_224px_Bridge(Exp_LLaVa15_Bridge):
+    vla_id: str = "siglip-224px-icy+mx-bridge"
+    base_vlm: Union[str, Path] = "siglip-224px+7b"
+    freeze_vision_backbone: bool = True
+
+
+# === [8 GPU] First Attempt LR Sweep w/ SigLIP 224px + Frozen Backbone + Bridge ===
+@dataclass
+class Exp_LR1E5_SigLIP_224px_Icy_Bridge(Exp_LLaVa15_Bridge):
+    vla_id: str = "lr-1e5+siglip-224px-icy+mx-bridge"
+    base_vlm: Union[str, Path] = "siglip-224px+7b"
+    freeze_vision_backbone: bool = True
+
+    learning_rate: float = 1e-5
+
+
+@dataclass
+class Exp_LR2E5_SigLIP_224px_Icy_Bridge(Exp_LLaVa15_Bridge):
+    vla_id: str = "lr-2e5+siglip-224px-icy+mx-bridge"
+    base_vlm: Union[str, Path] = "siglip-224px+7b"
+    freeze_vision_backbone: bool = True
+
+    learning_rate: float = 2e-5
+
+
 # === Define a VLA Registry Enum for Reference & Validation ===
 @unique
 class VLARegistry(Enum):
@@ -146,6 +180,13 @@ class VLARegistry(Enum):
 
     SIGLIP_224PX_MX_BRIDGE_RT1 = Exp_SigLIP_224px_Bridge_RT1
     FREEZE_DINOSIGLIP_384PX_MX_BRIDGE_RT1 = Exp_FreezeVIT_DINOSigLIP_384px_Bridge_RT1
+
+    # [3/03] Additional Frozen Backbone Experiments + SigLIP LR Sweep (Shallow)
+    FREEZE_LLAVA_REPRO_MX_BRIDGE = Exp_FreezeVIT_LLaVa15_Bridge
+    FREEZE_SIGLIP_224PX_MX_BRIDGE = Exp_FreezeVIT_SigLIP_224px_Bridge
+
+    LR_1E5_SIGLIP_224PX_ICY_MX_BRIDGE = Exp_LR1E5_SigLIP_224px_Icy_Bridge
+    LR_2E5_SIGLIP_224PX_ICY_MX_BRIDGE = Exp_LR2E5_SigLIP_224px_Icy_Bridge
 
     @property
     def vla_id(self) -> str:
