@@ -109,31 +109,6 @@ class Exp_FreezeVIT_DINOSigLIP_384px_Bridge(Exp_LLaVa15_Bridge):
     freeze_vision_backbone: bool = True
 
 
-# === [16 GPU] Bridge + RT-1 =>> Unfrozen SigLIP 224px + [Bridge, RT-1] ===
-@dataclass
-class Exp_SigLIP_224px_Bridge_RT1(Exp_LLaVa15_Bridge):
-    vla_id: str = "siglip-224px+mx-bridge-rt1"
-    base_vlm: Union[str, Path] = "siglip-224px+7b"
-
-    data_mix: str = "bridge_rt_1"
-
-    expected_world_size: int = 16
-    global_batch_size: int = 512
-
-
-# === [32 GPU] Bridge + RT-1 =>> Frozen DINO-SigLIP @ 384px + [Bridge, RT-1] ===
-@dataclass
-class Exp_FreezeVIT_DINOSigLIP_384px_Bridge_RT1(Exp_LLaVa15_Bridge):
-    vla_id: str = "prism-dinosiglip-icy+mx-bridge-rt1"
-    base_vlm: Union[str, Path] = "prism-dinosiglip+7b"
-    freeze_vision_backbone: bool = True
-
-    data_mix: str = "bridge_rt_1"
-
-    expected_world_size: int = 32
-    global_batch_size: int = 1024
-
-
 # === [8 GPU] LLaVa (Reproduction) Frozen Vision Backbone + Bridge ===
 @dataclass
 class Exp_FreezeVIT_LLaVa15_Bridge(Exp_LLaVa15_Bridge):
@@ -168,18 +143,23 @@ class Exp_LR2E5_SigLIP_224px_Icy_Bridge(Exp_LLaVa15_Bridge):
     learning_rate: float = 2e-5
 
 
+# === [16 GPU] Bridge + RT-1 =>> Unfrozen SigLIP 224px + [Bridge, RT-1] ===
+@dataclass
+class Exp_SigLIP_224px_Bridge_RT1(Exp_LLaVa15_Bridge):
+    vla_id: str = "siglip-224px+mx-bridge-rt1"
+    base_vlm: Union[str, Path] = "siglip-224px+7b"
+
+    data_mix: str = "bridge_rt_1"
+
+    expected_world_size: int = 16
+    global_batch_size: int = 512
+
+
 # === Define a VLA Registry Enum for Reference & Validation ===
 @unique
 class VLARegistry(Enum):
     LLAVA_REPRO_MX_BRIDGE = Exp_LLaVa15_Bridge
     SIGLIP_224PX_MX_BRIDGE = Exp_SigLIP_224px_Bridge
-
-    # [2/25] SK Initial Spread =>> DINOSigLIP, Freeze Vision Backbone, Multi-Node Bridge + RT-1
-    DINOSIGLIP_384PX_MX_BRIDGE = Exp_DINOSigLIP_384px_Bridge
-    FREEZE_DINOSIGLIP_384PX_MX_BRIDGE = Exp_FreezeVIT_DINOSigLIP_384px_Bridge
-
-    SIGLIP_224PX_MX_BRIDGE_RT1 = Exp_SigLIP_224px_Bridge_RT1
-    FREEZE_DINOSIGLIP_384PX_MX_BRIDGE_RT1 = Exp_FreezeVIT_DINOSigLIP_384px_Bridge_RT1
 
     # [3/03] Additional Frozen Backbone Experiments + SigLIP LR Sweep (Shallow)
     FREEZE_LLAVA_REPRO_MX_BRIDGE = Exp_FreezeVIT_LLaVa15_Bridge
@@ -187,6 +167,13 @@ class VLARegistry(Enum):
 
     LR_1E5_SIGLIP_224PX_ICY_MX_BRIDGE = Exp_LR1E5_SigLIP_224px_Icy_Bridge
     LR_2E5_SIGLIP_224PX_ICY_MX_BRIDGE = Exp_LR2E5_SigLIP_224px_Icy_Bridge
+
+    # [3/05] Multi-Node Bridge + RT-1 Sanity Check
+    SIGLIP_224PX_MX_BRIDGE_RT1 = Exp_SigLIP_224px_Bridge_RT1
+
+    # [3/07] DINOSigLIP Experiments (depends on Frozen vs. Unfrozen)
+    # DINOSIGLIP_384PX_MX_BRIDGE = Exp_DINOSigLIP_384px_Bridge
+    # FREEZE_DINOSIGLIP_384PX_MX_BRIDGE = Exp_FreezeVIT_DINOSigLIP_384px_Bridge
 
     @property
     def vla_id(self) -> str:

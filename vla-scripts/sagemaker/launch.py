@@ -42,7 +42,7 @@ class LaunchConfig:
 
     # OpenVLA Training Parameters
     vla_type: str = (                                                   # Unique VLA ID (specifies config)
-        VLARegistry.LR_1E5_SIGLIP_224PX_ICY_MX_BRIDGE.vla_id
+        VLARegistry.LLAVA_REPRO_MX_BRIDGE.vla_id
     )
 
     # Updated Paths for Data / Runs (on Sagemaker Volume)
@@ -96,10 +96,16 @@ def launch(cfg: LaunchConfig) -> None:
         base_job_name=cfg.job_name,
         instance_count=cfg.instance_count,
         instance_type=cfg.instance_type if not cfg.debug else "local_gpu",
+        volume_size=100,
         entry_point=cfg.entry_point,
         image_uri=cfg.image_uri,
         hyperparameters=hyperparameters,
-        environment={"PYTHONPATH": "/opt/ml/code", "WANDB_API_KEY": wandb_api_key, "TF_CPP_MIN_LOG_LEVEL": "3"},
+        environment={
+            "PYTHONPATH": "/opt/ml/code",
+            "WANDB_API_KEY": wandb_api_key,
+            "HF_HOME": "/opt/ml/input/data/training/skaramcheti/cache",
+            "TF_CPP_MIN_LOG_LEVEL": "3",
+        },
         sagemaker_session=sagemaker_session,
         subnets=SUBNETS,
         security_group_ids=SECURITY_GROUP_IDS,
