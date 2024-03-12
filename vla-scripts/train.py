@@ -47,14 +47,14 @@ class TrainConfig:
 
     # VLAConfig (`prismatic/conf/vla.py`); override with --vla.type `VLARegistry.<VLA>.vla_id`
     vla: VLAConfig = field(
-        default_factory=VLAConfig.get_choice_class(VLARegistry.LLAVA_REPRO_MX_BRIDGE.vla_id)
+        default_factory=VLAConfig.get_choice_class(VLARegistry.FREEZE_SIGLIP_224PX_MX_BRIDGE.vla_id)
     )
 
     # Directory Paths
     data_root_dir: Path = Path(                                     # Path to Open-X dataset directory
         "/mnt/fsx/surajnair/datasets/openx_processed"
     )
-    run_root_dir: Path = Path("./runs")                             # Path to directory to store logs & checkpoints
+    run_root_dir: Path = Path("/mnt/fsx/x-openvla/runs")            # Path to directory to store logs & checkpoints
 
     # Run Arguments
     stage: str = "vla-train"                                        # Train Stage (only `vla-train` supported for now)
