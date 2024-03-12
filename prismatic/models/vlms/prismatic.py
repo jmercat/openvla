@@ -536,7 +536,7 @@ class PrismaticVLM(VLM):
         return gen_texts if return_string_probabilities is None else gen_probabilities
 
     @torch.inference_mode()
-    def generate(self, image: Image, prompt_text: str, **kwargs: str) -> str:
+    def generate_with_prompt(self, image: Image, prompt_text: str, **kwargs: str) -> str:
         # For now, only support generation with a batch size of 1 for simplicity
         image_transform, tokenizer = self.vision_backbone.image_transform, self.llm_backbone.tokenizer
 
@@ -569,3 +569,11 @@ class PrismaticVLM(VLM):
         generated_text = tokenizer.decode(generated_ids[0, input_ids.shape[1] :], skip_special_tokens=True).strip()
 
         return generated_text
+
+    @torch.inference_mode()
+    def generate(
+        self,
+        **kwargs,
+    ) -> str:
+        generated_ids = super().generate(**kwargs)
+        return generated_ids

@@ -5,7 +5,8 @@ Runs a VLA checkpoint on samples from a dataset.
 (Sanity check to ensure we are doing test-time inference correctly.)
 
 Usage examples:
-    python vla-scripts/eval_vla_on_data.py --vla.type reproduction-llava-v15+mx-bridge --data_root_dir /scr-ssd/moojink/data/oxe/modified --pretrained_checkpoint /sphinx/u/moojink/checkpoints/tri/reproduction-llava-v15+mx-bridge+n1+b32+x7/checkpoints/step-077500-epoch-00-loss=0.0488.pt
+    python vla-scripts/eval_vla_on_data.py --vla.type siglip-224px+mx-bridge --data_root_dir /iris/u/moojink/data/ --pretrained_checkpoint /scr/moojink/checkpoints/tri/siglip-224px+mx-bridge+n1+b32+x7/checkpoints/step-050000-epoch-05-loss=0.1462.pt
+    python vla-scripts/eval_vla_on_data.py --vla.type siglip-224px+mx-bridge --data_root_dir /iris/u/moojink/data/ --pretrained_checkpoint /scr/moojink/checkpoints/tri/siglip-224px-icy+mx-bridge+n1+b32+x7/checkpoints/step-050000-epoch-05-loss=0.1198.pt
 """
 import copy
 import draccus
@@ -28,20 +29,6 @@ from prismatic.training import VLAMetrics, get_train_strategy
 from prismatic.util import set_global_seed
 from prismatic.vla import get_vla_dataset_and_collator
 from prismatic.vla.action_tokenizer import ActionTokenizer
-# TODO clean up below
-# from prisma import load_pretrained_vlm
-# from prisma.conf import DatasetConfig, DatasetRegistry, ModelConfig, ModelRegistry
-# from prisma.models import get_llm_backbone_and_tokenizer, get_vision_backbone_and_transform, get_vlm
-# from prisma.models.materialize import VISION_BACKBONES
-# from prisma.preprocessing import get_dataset_and_collator
-# from prisma.preprocessing.action_tokenizer import ActionTokenizer
-# from prisma.preprocessing.datasets.rlds.llava_rlds_dataset import (
-#     rlds2llava_transform,
-#     LLaVARLDSDataset
-# )
-# from prisma.preprocessing.datasets.rlds.oxe import make_oxe_dataset_kwargs_and_weights
-# from prisma.preprocessing.datasets.rlds.oxe.oxe_dataset_mixes import OXE_NAMED_MIXES
-# from prisma.util.data_utils import PaddedCollatorForLanguageModeling
 from torch.utils.data import DataLoader, Dataset, DistributedSampler
 from torchvision.transforms import Normalize
 from transformers.modeling_outputs import CausalLMOutputWithPast
@@ -71,16 +58,6 @@ class GenerateConfig:
         "/sphinx/u/moojink/prismatic-vlms/logs/bridge--repro-llava-batching-wd-p1+7b--stage=vla_finetune--seed=7--2024_01_20/checkpoints/step-065000-epoch-00-loss=0.4670.pt"
     )
 
-    # TODO clean up below
-    # # ModelConfig from `prisma/conf/models.py`; override with --model.type `ModelRegistry.<MODEL>.model_id`
-    # model: ModelConfig = field(
-    #     default_factory=ModelConfig.get_choice_class(
-    #         # ModelRegistry.QZ_SIGLIP_B16_256PX_NO_ALIGN_7B.model_id
-    #         ModelRegistry.ONX_LLAVA_BATCHING_WD_P1_7B.model_id
-    #     )
-    # )
-
-
     # DatasetConfig from `prisma/conf/datasets.py`; override with --dataset.type `DatasetRegistry.<DATASET>.dataset_id`
     dataset: DatasetConfig = field(default_factory=DatasetConfig.get_choice_class(DatasetRegistry.LLAVA_V15.dataset_id))
 
@@ -93,12 +70,6 @@ class GenerateConfig:
     # Randomness
     seed: int = 21                                              # Random Seed (for reproducibility)
     # fmt: on
-
-
-# TODO clean up below
-# def get_image_resize_size(vision_backbone_id: str) -> Tuple[int, int]:
-#     """Gets image resize size from vision backbone ID."""
-#     return VISION_BACKBONES[vision_backbone_id]["kwargs"]["default_image_size"]
 
 
 def compute_actions_accuracy_l1_loss(action_tokenizer, ground_truth_action_token_ids, predicted_action_token_ids, print_text):
@@ -129,11 +100,10 @@ def eval_teacher_forcing(batch, vlm, action_tokenizer, device):
     """
     # Prepare inputs.
     inputs = copy.deepcopy(batch)
-    import ipdb; ipdb.set_trace()
     inputs["input_ids"] = inputs["input_ids"].to(device)
     inputs["attention_mask"] = inputs["attention_mask"].to(device)
     inputs["pixel_values"] = inputs["pixel_values"].to(device)
-    # inputs["pixel_values"] = inputs["pixel_values"].to(dtype=vlm.llm_backbone.half_precision_dtype) # TODO recover
+    inputs["pixel_values"] = inputs["pixel_values"].to(dtype=vlm.llm_backbone.half_precision_dtype)
     inputs["labels"] = inputs["labels"].to(device)
     # Run model forward pass.
     output: CausalLMOutputWithPast = vlm(
@@ -258,9 +228,8 @@ def eval_no_teacher_forcing_prompt_builder(batch, vlm, action_tokenizer, tokeniz
     message = tokenizer.decode(inputs["input_ids"][0][TASK_DESCRIPTION_START_IDX:-ACTION_DIM-NUM_TOKENS_FOR_ASSISTANT])
     prompt_builder.add_turn(role="human", message=message)
     prompt_text = prompt_builder.get_prompt()
-    # TODO back to generate_with_prompt???
-    # Call `generate` to generate action tokens.
-    generated_text = vlm.generate(image, prompt_text, max_new_tokens=ACTION_DIM, do_sample=False)
+    # Call `generate_with_prompt()` to generate action tokens.
+    generated_text = vlm.generate_with_prompt(image, prompt_text, max_new_tokens=ACTION_DIM, do_sample=False)
     predicted_action_token_ids = torch.unsqueeze(torch.Tensor(tokenizer(generated_text)['input_ids'][-ACTION_DIM:]).long(), dim=0).to(device)
     # Compute action tokens accuracy and L1 loss.
     actions_accuracy, l1_loss = compute_actions_accuracy_l1_loss(action_tokenizer, ground_truth_action_token_ids, predicted_action_token_ids, print_text="No teacher forcing - prompt builder:")
@@ -284,11 +253,10 @@ def eval(cfg: GenerateConfig) -> None:
     vlm = load_vla(cfg.pretrained_checkpoint, hf_token=hf_token, load_for_training=False)
     for param in vlm.parameters():
         assert param.dtype == torch.float32, f"Loaded VLM parameter not in full precision: {param}"
-    # TODO: recover below
-    # # Cast to half precision.
-    # vlm.vision_backbone.to(dtype=vlm.vision_backbone.half_precision_dtype)
-    # vlm.llm_backbone.to(dtype=vlm.llm_backbone.half_precision_dtype)
-    # vlm.to(dtype=vlm.llm_backbone.half_precision_dtype)
+    # Cast to half precision.
+    vlm.vision_backbone.to(dtype=vlm.vision_backbone.half_precision_dtype)
+    vlm.llm_backbone.to(dtype=vlm.llm_backbone.half_precision_dtype)
+    vlm.to(dtype=vlm.llm_backbone.half_precision_dtype)
     vlm.to(device)
     # Create tokenizer.
     tokenizer = vlm.llm_backbone.get_tokenizer()
@@ -355,7 +323,7 @@ def eval(cfg: GenerateConfig) -> None:
         tokenizer=vlm.llm_backbone.get_tokenizer(),
         prompt_builder_fn=vlm.llm_backbone.prompt_builder_fn,
         default_image_resolution=vlm.vision_backbone.default_image_resolution,
-        shuffle_buffer_size=cfg.vla.shuffle_buffer_size,
+        shuffle_buffer_size=1000,
     )
     # Create dataloader
     batch_size = 1
@@ -388,21 +356,21 @@ def eval(cfg: GenerateConfig) -> None:
         stats_dict["teacher_forcing"]["l1_loss"] += l1_loss
         stats_dict["teacher_forcing"]["actions_accuracy"] += actions_accuracy
         print(f"-----------------------------------------------------------")
-        # # No teacher forcing: via `generate()`
-        # actions_accuracy, l1_loss = eval_no_teacher_forcing(batch, vlm, action_tokenizer, device)
-        # stats_dict["no_teacher_forcing"]["l1_loss"] += l1_loss
-        # stats_dict["no_teacher_forcing"]["actions_accuracy"] += actions_accuracy
-        # print(f"-----------------------------------------------------------")
-        # # No teacher forcing: via manual autoregressive sequential output prediction
-        # actions_accuracy, l1_loss = eval_no_teacher_forcing_manual_generate(batch, vlm, action_tokenizer, device)
-        # stats_dict["no_teacher_forcing_manual_generate"]["l1_loss"] += l1_loss
-        # stats_dict["no_teacher_forcing_manual_generate"]["actions_accuracy"] += actions_accuracy
-        # print(f"-----------------------------------------------------------")
+        # No teacher forcing: via `generate()`
+        actions_accuracy, l1_loss = eval_no_teacher_forcing(batch, vlm, action_tokenizer, device)
+        stats_dict["no_teacher_forcing"]["l1_loss"] += l1_loss
+        stats_dict["no_teacher_forcing"]["actions_accuracy"] += actions_accuracy
+        print(f"-----------------------------------------------------------")
+        # No teacher forcing: via manual autoregressive sequential output prediction
+        actions_accuracy, l1_loss = eval_no_teacher_forcing_manual_generate(batch, vlm, action_tokenizer, device)
+        stats_dict["no_teacher_forcing_manual_generate"]["l1_loss"] += l1_loss
+        stats_dict["no_teacher_forcing_manual_generate"]["actions_accuracy"] += actions_accuracy
+        print(f"-----------------------------------------------------------")
         # # No teacher forcing (alt)
-        # if batch_size == 1:
-        #     actions_accuracy, l1_loss = eval_no_teacher_forcing_prompt_builder(batch, vlm, action_tokenizer, tokenizer, image_transform, device)
-        #     stats_dict["teacher_forcing_prompt_builder"]["l1_loss"] += l1_loss
-        #     stats_dict["teacher_forcing_prompt_builder"]["actions_accuracy"] += actions_accuracy
+        if batch_size == 1:
+            actions_accuracy, l1_loss = eval_no_teacher_forcing_prompt_builder(batch, vlm, action_tokenizer, tokenizer, image_transform, device)
+            stats_dict["teacher_forcing_prompt_builder"]["l1_loss"] += l1_loss
+            stats_dict["teacher_forcing_prompt_builder"]["actions_accuracy"] += actions_accuracy
         cnt += 1
         if cnt == 100:
             break

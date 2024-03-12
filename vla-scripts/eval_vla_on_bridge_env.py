@@ -4,7 +4,8 @@ eval_vla_on_bridge_env.py
 Runs a VLA checkpoint in a real-world Bridge V2 environment.
 
 Usage examples:
-    python vla-scripts/eval_vla_on_bridge_env.py --model.type reproduction-llava-v15+7b --pretrained_checkpoint /scr/moojink/checkpoints/tri/reproduction-llava-v15+mx-bridge+n1+b32+x7/checkpoints/step-077500-epoch-00-loss=0.0488.pt
+    python vla-scripts/eval_vla_on_bridge_env.py --model.type siglip-224px+7b --pretrained_checkpoint /scr/moojink/checkpoints/tri/siglip-224px+mx-bridge+n1+b32+x7/checkpoints/step-050000-epoch-05-loss=0.1462.pt
+    python vla-scripts/eval_vla_on_bridge_env.py --model.type siglip-224px+7b --pretrained_checkpoint /scr/moojink/checkpoints/tri/siglip-224px-icy+mx-bridge+n1+b32+x7/checkpoints/step-050000-epoch-05-loss=0.0674.pt
 """
 import copy
 import cv2
@@ -87,7 +88,7 @@ def get_vla_action(vlm, image, task_label, tokenizer, action_tokenizer, device):
     prompt_builder = vlm.get_prompt_builder()
     prompt_builder.add_turn(role="human", message=f"What action should the robot take to {task_label.lower()}?")
     prompt_text = prompt_builder.get_prompt()
-    generated_text = vlm.generate(image, prompt_text, max_new_tokens=ACTION_DIM, do_sample=False)
+    generated_text = vlm.generate_with_prompt(image, prompt_text, max_new_tokens=ACTION_DIM, do_sample=False)
     predicted_action_token_ids = torch.unsqueeze(torch.Tensor(tokenizer(generated_text)['input_ids'][-ACTION_DIM:]).long(), dim=0).to(device)
     normalized_action = action_tokenizer.decode_token_ids_to_actions(predicted_action_token_ids.cpu().numpy())[0]
     return normalized_action
@@ -181,7 +182,8 @@ def eval(cfg: GenerateConfig) -> None:
     env = JaxRLWidowXEnv(env_params)
     # Start evaluation.
     task_label = ''
-    for i in range(50):
+    episode_idx = 0
+    while episode_idx < 50:
         if task_label == '':
             user_input = ''
             while user_input == '':
@@ -206,7 +208,7 @@ def eval(cfg: GenerateConfig) -> None:
             normalized_act=[],
         )
         os.makedirs('./temp', exist_ok=True)
-        input(f'Press Enter to start episode {i+1}...')
+        input(f'Press Enter to start episode {episode_idx+1}...')
         zero_action_count = 0
         while t < 50:
             try:
@@ -259,7 +261,9 @@ def eval(cfg: GenerateConfig) -> None:
                 break
         with open('obs_acts_history_dict.pkl', 'wb') as f:
             pickle.dump(obs_acts_history_dict, f)
-        save_rollout_gif(rollout_images, i)
+        save_rollout_gif(rollout_images, episode_idx)
+        if input("Enter 'r' if you want to redo the episode, or press Enter to continue: ") != 'r':
+            episode_idx += 1
 
 
 if __name__ == "__main__":
