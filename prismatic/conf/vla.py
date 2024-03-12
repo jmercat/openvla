@@ -110,6 +110,7 @@ class Exp_FreezeVIT_LLaVa15_Bridge(Exp_LLaVa15_Bridge):
 class Exp_DINOSigLIP_384px_Bridge(Exp_LLaVa15_Bridge):
     vla_id: str = "prism-dinosiglip+mx-bridge"
     base_vlm: Union[str, Path] = "prism-dinosiglip+7b"
+    freeze_vision_backbone: bool = False
 
     # Note =>> Unfrozen DINOSigLIP OOMs w/ Per-Device Batch Size of 32!
     global_batch_size: int = 192
@@ -122,6 +123,11 @@ class Exp_FreezeVIT_DINOSigLIP_384px_Bridge(Exp_LLaVa15_Bridge):
     vla_id: str = "prism-dinosiglip-icy+mx-bridge"
     base_vlm: Union[str, Path] = "prism-dinosiglip+7b"
     freeze_vision_backbone: bool = True
+
+    # Note =>> Frozen DINOSigLIP can Handle Per-Device Batch Size of 32
+    #   - HOWEVER :: For fair comparison with "Unfrozen" --> run with lower batch size!
+    global_batch_size: int = 192
+    per_device_batch_size: int = 24
 
 
 # === [8 GPU] First Attempt LR Sweep w/ SigLIP 224px + Unfrozen Backbone + Bridge ===
