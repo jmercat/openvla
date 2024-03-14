@@ -2,7 +2,7 @@
 # Prismatic VLM Sagemaker Dockerfile
 #   => Base Image :: Python 3.10 & Pytorch 2.1.0
 # ===
-FROM 763104351884.dkr.ecr.us-east-1.amazonaws.com/pytorch-training:2.1.0-gpu-py310-cu121-ubuntu20.04-sagemaker
+FROM 763104351884.dkr.ecr.us-east-1.amazonaws.com/pytorch-training:2.2.0-gpu-py310-cu121-ubuntu20.04-sagemaker
 
 # Sane Defaults
 RUN apt-get update
