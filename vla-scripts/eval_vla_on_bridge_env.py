@@ -4,11 +4,11 @@ eval_vla_on_bridge_env.py
 Runs a VLA checkpoint in a real-world Bridge V2 environment.
 
 Usage examples:
-    python vla-scripts/eval_vla_on_bridge_env.py --model.type siglip-224px+7b --pretrained_checkpoint /scr/moojink/checkpoints/tri/siglip-224px+mx-bridge+n1+b32+x7/checkpoints/step-050000-epoch-05-loss=0.1462.pt
-    python vla-scripts/eval_vla_on_bridge_env.py --model.type siglip-224px+7b --pretrained_checkpoint /scr/moojink/checkpoints/tri/siglip-224px-icy+mx-bridge+n1+b32+x7/checkpoints/step-050000-epoch-05-loss=0.0674.pt
+    python vla-scripts/eval_vla_on_bridge_env.py \
+        --model.type siglip-224px+7b \
+        --pretrained_checkpoint /scr/moojink/checkpoints/tri/siglip-224px+mx-bridge+n1+b32+x7/checkpoints/step-080000-epoch-09-loss=0.1071.pt \
+        --data_stats_path /iris/u/moojink/prismatic-vlms/dataset_statistics/bridge_orig/dataset_statistics_ac6dcc8fcc63229c1c136a18356467ddd2c37585bbc4534798c38e45798fd93a.json
 """
-import copy
-import cv2
 import draccus
 import glob
 import imageio
@@ -16,34 +16,27 @@ import json
 import numpy as np
 import os
 import pickle
-import requests
 import sys
 import time
 import torch
 from accelerate.utils import set_seed
 from collections import defaultdict
 from dataclasses import dataclass, field
-from functools import partial
 from pathlib import Path
 from PIL import Image
-from prismatic.conf import DatasetConfig, DatasetRegistry, ModelConfig, ModelRegistry, VLAConfig, VLARegistry
+from prismatic.conf import ModelConfig, ModelRegistry
 from prismatic.models import load_vla
 from prismatic.models.materialize import VISION_BACKBONES
-from prismatic.training import VLAMetrics, get_train_strategy
-from prismatic.util import set_global_seed
-from prismatic.vla import get_vla_dataset_and_collator
 from prismatic.vla.action_tokenizer import ActionTokenizer
-from torch.utils.data import DataLoader, Dataset, DistributedSampler
-from torchvision.transforms import Normalize
-from transformers.modeling_outputs import CausalLMOutputWithPast
 from typing import Optional, Tuple, Type, Union
 sys.path.append('/iris/u/moojink/prismatic-dev/') # so that the interpreter can find widowx_real_env
-from widowx_real_env import JaxRLWidowXEnv, start_transforms
+from widowx_real_env import JaxRLWidowXEnv
 
 
+# Initialize constants and pretty-printing mode in NumPy.
 ACTION_DIM = 7
-np.set_printoptions(formatter={'float': lambda x: "{0:0.2f}".format(x)})
 TIME = time.time()
+np.set_printoptions(formatter={'float': lambda x: "{0:0.2f}".format(x)})
 
 
 class AttrDict(defaultdict):
@@ -94,8 +87,8 @@ def get_vla_action(vlm, image, task_label, tokenizer, action_tokenizer, device):
     return normalized_action
 
 
-def get_action_norm_metadata(dataset_statistics_path):
-    with open(dataset_statistics_path, "r") as f:
+def get_action_norm_metadata(data_stats_path):
+    with open(data_stats_path, "r") as f:
         metadata = json.load(f)
     return metadata
 
@@ -135,6 +128,9 @@ class GenerateConfig:
         )
     )
 
+    # Dataset statistics path (for action unnormalization)
+    data_stats_path: str = "/iris/u/moojink/prismatic-vlms/dataset_statistics/bridge_orig/dataset_statistics_ac6dcc8fcc63229c1c136a18356467ddd2c37585bbc4534798c38e45798fd93a.json"
+
     # Training stage (doesn't matter here, but the loading function expects the argument)
     stage: str = "vla-finetune"
 
@@ -151,24 +147,20 @@ class GenerateConfig:
 @draccus.wrap()
 def eval(cfg: GenerateConfig) -> None:
     resize_size = get_image_resize_size(cfg.model.vision_backbone_id)
-    debug = False
     assert cfg.pretrained_checkpoint is not None, "cfg.pretrained_checkpoint must not be None!"
-
-    dataset_statistics_path = "/iris/u/moojink/prismatic-vlms/dataset_statistics/bridge_orig/dataset_statistics_ac6dcc8fcc63229c1c136a18356467ddd2c37585bbc4534798c38e45798fd93a.json"
-    metadata = get_action_norm_metadata(dataset_statistics_path)
-
+    # Get action unnormalization stats.
+    metadata = get_action_norm_metadata(cfg.data_stats_path)
+    # Prepare for model loading.
     print(f"[*] Initializing Generation Playground with `{cfg.model_family}`")
     hf_token = cfg.hf_token.read_text().strip() if isinstance(cfg.hf_token, Path) else os.environ[cfg.hf_token]
     device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
     set_seed(cfg.seed)
-
     # Load Base VLM from checkpoint path
     #   =>> Note :: Verifies that all parameters are loaded in FP32 on load!
     print(f"Loading VLM from checkpoint: {cfg.pretrained_checkpoint}")
     vlm = load_vla(cfg.pretrained_checkpoint, hf_token=hf_token, load_for_training=False)
     for param in vlm.parameters():
         assert param.dtype == torch.float32, f"Loaded VLM parameter not in full precision: {param}"
-
     # Cast to half precision.
     vlm.vision_backbone.to(dtype=vlm.vision_backbone.half_precision_dtype)
     vlm.llm_backbone.to(dtype=vlm.llm_backbone.half_precision_dtype)
@@ -202,11 +194,6 @@ def eval(cfg: GenerateConfig) -> None:
         last_tstamp = time.time()
         step_duration = 0.2 # divide 1 by this to get control frequency
         t = 0
-        obs_acts_history_dict = dict(
-            img=[],
-            act=[],
-            normalized_act=[],
-        )
         os.makedirs('./temp', exist_ok=True)
         input(f'Press Enter to start episode {episode_idx+1}...')
         zero_action_count = 0
@@ -225,11 +212,9 @@ def eval(cfg: GenerateConfig) -> None:
                     # Preprocess the image the exact same way that the Berkeley Bridge folks did it
                     # to minimize distribution shift.
                     # NOTE (Moo Jin): Yes, we resize down to 256x256 first even though the image may end up being
-                    # resized up to 336x336 by some models. This is just so that we're in-distribution w.r.t. the original
-                    # preprocessing at train time.
-                    # TODO (Moo Jin): Check if all this is necessary?
+                    # resized up to a different resolution by some models. This is just so that we're in-distribution
+                    # w.r.t. the original preprocessing at train time.
                     img = obs['pixels'][0]
-                    obs_acts_history_dict['img'].append(img)
                     img = Image.fromarray(img)
                     img_size = 256
                     img = img.resize((img_size, img_size), Image.Resampling.LANCZOS)
@@ -246,12 +231,7 @@ def eval(cfg: GenerateConfig) -> None:
                     else:
                         zero_action_count = 0
                     action = unnormalize_action(normalized_action, metadata)
-                    obs_acts_history_dict['act'].append(action)
-                    obs_acts_history_dict['normalized_act'].append(normalized_action)
                     get_obs_tstamp = last_tstamp + step_duration # timestamp to wait for before getting obs (to see the effect of the action you take in the image obs)
-                    if debug:
-                        action = np.zeros((7,)) # Use this when running the script with a dummy policy.
-                        action[2] = -0.001 # slowly fall
                     tstamp_return_obs = last_tstamp + step_duration
                     print('action:', action)
                     _, _, _, _ = env.step({'action':action, 'tstamp_return_obs':tstamp_return_obs})
@@ -259,8 +239,6 @@ def eval(cfg: GenerateConfig) -> None:
             except Exception as e:
                 print(f"Caught exception: {e}")
                 break
-        with open('obs_acts_history_dict.pkl', 'wb') as f:
-            pickle.dump(obs_acts_history_dict, f)
         save_rollout_gif(rollout_images, episode_idx)
         if input("Enter 'r' if you want to redo the episode, or press Enter to continue: ") != 'r':
             episode_idx += 1
