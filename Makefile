@@ -21,3 +21,29 @@ check:
 autoformat:
 	black .
 	ruff check --fix --show-fixes .
+
+
+# [TRI Internal] Sagemaker Docker Build + Push to ECR
+SAGEMAKER_PROFILE ?= default
+SAGEMAKER_REGION ?= us-east-1
+
+# OpenVLA Sagemaker Build
+SAGEMAKER_VLA_NAME ?= openvla
+sagemaker-openvla:
+	@echo "[*] Building OpenVLA Sagemaker Container =>> Pushing to AWS ECR"; \
+      echo "[*] Verifying AWS ECR Credentials"; \
+	  account=$$(aws sts get-caller-identity --query Account --output text --profile ${SAGEMAKER_PROFILE}); \
+	  echo "    => Found AWS Account ID = $${account}"; \
+	  fullname=$${account}.dkr.ecr.${SAGEMAKER_REGION}.amazonaws.com/${SAGEMAKER_VLA_NAME}:latest; \
+  	  echo "    => Setting ECR Registry Path = $${fullname}"; \
+  	  echo ""; \
+  	  echo "[*] Rebuilding ${SAGEMAKER_VLA_NAME} Docker Image"; \
+  	  echo "    => Retrieving Official AWS Sagemaker Base Image"; \
+	  aws ecr get-login-password --region ${SAGEMAKER_REGION} | docker login --username AWS --password-stdin 763104351884.dkr.ecr.us-east-1.amazonaws.com; \
+	  echo "    => Building Image from Dockerfile"; \
+  	  docker build -f vla-scripts/sagemaker/vla-training.Dockerfile -t ${SAGEMAKER_VLA_NAME} .; \
+  	  docker tag ${SAGEMAKER_VLA_NAME} $${fullname}; \
+  	  echo ""; \
+  	  echo "[*] Pushing Image to ECR Path = $${fullname}"; \
+  	  aws ecr get-login-password --region ${SAGEMAKER_REGION} | docker login --username AWS --password-stdin $${fullname}; \
+  	  docker push $${fullname};
