@@ -46,6 +46,34 @@ def rand_swap_exterior_images(img1, img2):
     )
 
 
+def droid_baseact_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
+    # every input feature is batched, ie has leading batch dimension
+    dt = trajectory["action_dict"]["cartesian_velocity"][:, :3]
+    dR = mat_to_rot6d(euler_to_rmat(trajectory["action_dict"]["cartesian_velocity"][:, 3:6]))
+    trajectory["action"] = tf.concat(
+        (
+            dt,
+            dR,
+            trajectory["action_dict"]["gripper_position"],
+        ),
+        axis=-1,
+    )
+    trajectory["observation"]["exterior_image_1_left"], trajectory["observation"]["exterior_image_2_left"] = (
+        rand_swap_exterior_images(
+            trajectory["observation"]["exterior_image_1_left"],
+            trajectory["observation"]["exterior_image_2_left"],
+        )
+    )
+    trajectory["observation"]["proprio"] = tf.concat(
+        (
+            trajectory["observation"]["cartesian_position"],
+            trajectory["observation"]["gripper_position"],
+        ),
+        axis=-1,
+    )
+    return trajectory
+
+
 def droid_wristact_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
     # every input feature is batched, ie has leading batch dimension
     wrist_act = change_velocity_act_frame(
