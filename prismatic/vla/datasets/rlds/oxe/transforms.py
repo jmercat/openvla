@@ -25,6 +25,7 @@ from prismatic.vla.datasets.rlds.utils.data_utils import (
     rel2abs_gripper_actions,
     relabel_bridge_actions,
 )
+from prismatic.vla.datasets.rlds.oxe.utils.droid_utils import droid_wristact_transform
 
 
 def bridge_oxe_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
@@ -814,4 +815,5 @@ OXE_STANDARDIZATION_TRANSFORMS = {
     "berkeley_gnm_recon": gnm_dataset_transform,
     "berkeley_gnm_cory_hall": gnm_dataset_transform,
     "berkeley_gnm_sac_son": gnm_dataset_transform,
+    "droid": droid_wristact_transform,
 }
