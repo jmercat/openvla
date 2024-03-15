@@ -30,8 +30,12 @@ RUN apt-get update && apt-get install -y \
     python-pygame
 
 
-# Install Prismatic + VLA Python Dependencies (`pip`) + Sagemaker
+# IMPORTANT :: Uninstall & Reinstall Torch (Sagemaker CPU Core Bug)
 RUN pip install --upgrade pip
+RUN pip uninstall -y torch
+RUN pip install torch==2.2.0 torchvision==0.17.0 torchaudio==2.2.0 --index-url https://download.pytorch.org/whl/cu121
+
+# Install Prismatic + VLA Python Dependencies (`pip`) + Sagemaker
 RUN pip install \
     accelerate>=0.25.0 \
     draccus@git+https://github.com/dlwh/draccus \
