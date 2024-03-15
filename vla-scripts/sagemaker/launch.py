@@ -42,7 +42,7 @@ class LaunchConfig:
 
     # OpenVLA Training Parameters
     vla_type: str = (                                                   # Unique VLA ID (specifies config)
-        VLARegistry.LLAVA_REPRO_MX_BRIDGE.vla_id
+        VLARegistry.LR_2E5_SIGLIP_224PX_ICY_MX_BRIDGE.vla_id
     )
 
     # Updated Paths for Data / Runs (on Sagemaker Volume)
@@ -96,7 +96,6 @@ def launch(cfg: LaunchConfig) -> None:
         base_job_name=cfg.job_name,
         instance_count=cfg.instance_count,
         instance_type=cfg.instance_type if not cfg.debug else "local_gpu",
-        volume_size=100,
         entry_point=cfg.entry_point,
         image_uri=cfg.image_uri,
         hyperparameters=hyperparameters,
@@ -109,13 +108,12 @@ def launch(cfg: LaunchConfig) -> None:
         sagemaker_session=sagemaker_session,
         subnets=SUBNETS,
         security_group_ids=SECURITY_GROUP_IDS,
-        checkpoint_s3_uri=S3_LOG_PATH,
-        output_path=S3_LOG_PATH,
         keep_alive_period_in_seconds=3600,
         max_run=60 * 60 * 24 * cfg.max_days,
         distribution={"torch_distributed": {"enabled": True}},
+        disable_profiler=True,
     )
-    estimator.fit(inputs={"training": train_fs})
+    estimator.fit(inputs={"training": train_fs if not cfg.debug else "file:///mnt/fsx/"})
 
 
 if __name__ == "__main__":

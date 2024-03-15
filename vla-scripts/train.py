@@ -47,7 +47,7 @@ class TrainConfig:
 
     # VLAConfig (`prismatic/conf/vla.py`); override with --vla.type `VLARegistry.<VLA>.vla_id`
     vla: VLAConfig = field(
-        default_factory=VLAConfig.get_choice_class(VLARegistry.FREEZE_SIGLIP_224PX_MX_BRIDGE.vla_id)
+        default_factory=VLAConfig.get_choice_class(VLARegistry.LLAVA_REPRO_MX_BRIDGE.vla_id)
     )
 
     # Directory Paths
