@@ -8,6 +8,10 @@ Usage examples:
         --model.type siglip-224px+7b \
         --pretrained_checkpoint /scr/moojink/checkpoints/tri/siglip-224px+mx-bridge+n1+b32+x7/checkpoints/step-080000-epoch-09-loss=0.1071.pt \
         --data_stats_path /iris/u/moojink/prismatic-vlms/dataset_statistics/bridge_orig/dataset_statistics_ac6dcc8fcc63229c1c136a18356467ddd2c37585bbc4534798c38e45798fd93a.json
+    python vla-scripts/eval_vla_on_bridge_env.py \
+        --model.type siglip-224px+7b \
+        --pretrained_checkpoint /scr/moojink/checkpoints/tri/lr-2e5+siglip-224px+mx-bridge+n1+b32+x7/checkpoints/step-080000-epoch-09-loss=0.0987.pt \
+        --data_stats_path /iris/u/moojink/prismatic-vlms/dataset_statistics/bridge_orig/dataset_statistics_ac6dcc8fcc63229c1c136a18356467ddd2c37585bbc4534798c38e45798fd93a.json
 """
 import draccus
 import glob
@@ -223,14 +227,14 @@ def eval(cfg: GenerateConfig) -> None:
                     img.save(f'temp/{t}.png')
                     normalized_action = get_vla_action(vlm, img, task_label, tokenizer, action_tokenizer, device)
                     print(f"zero_action_count: {zero_action_count}")
-                    if np.isclose(np.linalg.norm(normalized_action), 1, atol=0.05) and np.linalg.norm(normalized_action[:6]) < 1e-5:
+                    action = unnormalize_action(normalized_action, metadata)
+                    if np.isclose(np.linalg.norm(action), 1, atol=0.01) and np.linalg.norm(action[:6]) < 0.01:
                         zero_action_count += 1
                         if zero_action_count == 5:
                             print('Ending episode early due to robot inaction.')
                             break
                     else:
                         zero_action_count = 0
-                    action = unnormalize_action(normalized_action, metadata)
                     get_obs_tstamp = last_tstamp + step_duration # timestamp to wait for before getting obs (to see the effect of the action you take in the image obs)
                     tstamp_return_obs = last_tstamp + step_duration
                     print('action:', action)
