@@ -2,39 +2,39 @@
 eval_vla_on_real2sim_env.py
 
 Runs a VLA checkpoint in a real-to-sim environment.
-
-Usage examples:
-    VK_ICD_FILENAMES=/iris/u/moojink/prismatic-dev/nvidia_icd.json MS2_ASSET_DIR=/iris/u/moojink/Real2Sim/ManiSkill2_real2sim/data python vla-scripts/eval_vla_on_real2sim_env.py --model.type siglip-224px+7b --pretrained_checkpoint /scr/moojink/checkpoints/tri/lr-2e5+siglip-224px+mx-bridge+n1+b32+x7/checkpoints/step-080000-epoch-09-loss=0.0987.pt
-    VK_ICD_FILENAMES=/iris/u/moojink/prismatic-dev/nvidia_icd.json MS2_ASSET_DIR=/iris/u/moojink/Real2Sim/ManiSkill2_real2sim/data python vla-scripts/eval_vla_on_real2sim_env.py --model.type siglip-224px+7b --pretrained_checkpoint /sphinx/u/moojink/checkpoints/tri/prismatic-dev/runs/lr-2e5+siglip-224px+mx-bridge+n1+b32+x7/checkpoints/step-080000-epoch-09-loss=0.0987.pt
 """
-import draccus
-import imageio
+
 import json
-import numpy as np
 import os
-import real2sim
 import time
-import torch
-import wandb
-import tqdm
-from accelerate.utils import set_seed
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Tuple, Union
+
+import draccus
+import numpy as np
+import real2sim
+import torch
+import tqdm
+from accelerate.utils import set_seed
 from PIL import Image
+from real2sim.utils.env.observation_utils import get_image_from_maniskill2_obs_dict
+
+import wandb
 from prismatic.conf import ModelConfig, ModelRegistry
 from prismatic.models import load_vla
 from prismatic.models.materialize import VISION_BACKBONES
 from prismatic.vla.action_tokenizer import ActionTokenizer
-from real2sim.utils.env.observation_utils import get_image_from_maniskill2_obs_dict
-from typing import Optional, Tuple, Type, Union
 
-
-assert 'MS2_ASSET_DIR' in os.environ, "Environment variable MS2_ASSET_DIR not set. Usage: `MS2_ASSET_DIR=./ManiSkill2_real2sim/data python test_real2sim.py ...`"
+assert "MS2_ASSET_DIR" in os.environ, (
+    "Environment variable MS2_ASSET_DIR not set. "
+    "Usage: `MS2_ASSET_DIR=./ManiSkill2_real2sim/data python test_real2sim.py ...`"
+)
 
 NUM_EPISODES = 5
-MAX_STEPS = 100     # TODO: retrieve this from env
+MAX_STEPS = 100  # TODO: retrieve this from env
 ACTION_DIM = 7
-np.set_printoptions(formatter={'float': lambda x: "{0:0.2f}".format(x)})
+np.set_printoptions(formatter={"float": lambda x: "{0:0.2f}".format(x)})
 TIME = time.strftime("%Y_%m_%d-%H_%M_%S")
 
 
@@ -49,7 +49,9 @@ def get_vla_action(vlm, image, task_description, tokenizer, action_tokenizer, de
     prompt_builder.add_turn(role="human", message=f"What action should the robot take to {task_description.lower()}?")
     prompt_text = prompt_builder.get_prompt()
     generated_text = vlm.generate_with_prompt(image, prompt_text, max_new_tokens=ACTION_DIM, do_sample=False)
-    predicted_action_token_ids = torch.unsqueeze(torch.Tensor(tokenizer(generated_text)['input_ids'][-ACTION_DIM:]).long(), dim=0).to(device)
+    predicted_action_token_ids = torch.unsqueeze(
+        torch.Tensor(tokenizer(generated_text)["input_ids"][-ACTION_DIM:]).long(), dim=0
+    ).to(device)
     normalized_action = action_tokenizer.decode_token_ids_to_actions(predicted_action_token_ids.cpu().numpy())[0]
     return normalized_action
 
@@ -72,14 +74,14 @@ def unnormalize_action(action, metadata, skip_gripper_action=True):
 
     action: numpy array, shape=(7,), dtype=np.float32
     """
-    action_low = np.array(metadata['action']['q01'])
-    action_high = np.array(metadata['action']['q99'])
+    action_low = np.array(metadata["action"]["q01"])
+    action_high = np.array(metadata["action"]["q99"])
     if skip_gripper_action:
         out = action
         if len(action.shape) == 1:
             out[:-1] = 0.5 * (action[:-1] + 1) * (action_high[:-1] - action_low[:-1]) + action_low[:-1]
         else:
-            out[:,:-1] = 0.5 * (action[:,:-1] + 1) * (action_high[:-1] - action_low[:-1]) + action_low[:-1]
+            out[:, :-1] = 0.5 * (action[:, :-1] + 1) * (action_high[:-1] - action_low[:-1]) + action_low[:-1]
     else:
         out = 0.5 * (action + 1) * (action_high - action_low) + action_low
     return out
@@ -95,7 +97,7 @@ def normalize_gripper_action(action):
     Normalization formula: y = 2 * (x - orig_low) / (orig_high - orig_low) - 1
     """
     # To implement, just normalize the last action to [-1,+1].
-    orig_low, orig_high = 0., 1.
+    orig_low, orig_high = 0.0, 1.0
     action[-1] = 2 * (action[-1] - orig_low) / (orig_high - orig_low) - 1
     return action
 
@@ -134,16 +136,18 @@ class GenerateConfig:
 
 
 @draccus.wrap()
-def eval(cfg: GenerateConfig) -> None:
+def eval_policy(cfg: GenerateConfig) -> None:
     resize_size = get_image_resize_size(cfg.model.vision_backbone_id)
     assert cfg.pretrained_checkpoint is not None, "cfg.pretrained_checkpoint must not be None!"
 
     # initialize logging
-    wandb.init(project="openvla", name=f"EVAL_{cfg.model.type}_{cfg.env_name}", entity="clvr")
+    wandb.init(project="openvla", name=f"EVAL_{cfg.model.model_id}_{cfg.env_name}", entity="clvr")
 
     # Get action unnormalization stats.
-    dataset_statistics_path = "/shared/karl/models/open_vla/lr-2e5+siglip-224px+mx-bridge+n1+b32+x7/" \
-                              "dataset_statistics_6660f1fd7de2514abf18365431cdbe7edf09f55ed235830a649d7a45f6ffc3a4.json"
+    dataset_statistics_path = (
+        "/shared/karl/models/open_vla/lr-2e5+siglip-224px+mx-bridge+n1+b32+x7/"
+        "dataset_statistics_6660f1fd7de2514abf18365431cdbe7edf09f55ed235830a649d7a45f6ffc3a4.json"
+    )
     metadata = get_action_norm_metadata(dataset_statistics_path)
 
     print(f"[*] Initializing Generation Playground with `{cfg.model_family}`")
@@ -179,7 +183,7 @@ def eval(cfg: GenerateConfig) -> None:
         # Setup.
         t = 0
         instruction = env.get_language_instruction()
-        print(f'Task: {instruction}')
+        print(f"Task: {instruction}")
         rollout_images = []
         print(f"Starting episode {j+1}...")
         done, truncated = False, False
@@ -187,7 +191,6 @@ def eval(cfg: GenerateConfig) -> None:
             while not (done or truncated):
                 try:
                     t += 1
-                    print(f't: {t}')
                     image = get_image_from_maniskill2_obs_dict(env, obs)
                     image = Image.fromarray(image)
 
@@ -197,26 +200,32 @@ def eval(cfg: GenerateConfig) -> None:
                     # resized up to a different resolution by some models. This is just so that we're in-distribution
                     # w.r.t. the original preprocessing at train time.
                     IMAGE_BASE_PREPROCESS_SIZE = 256
-                    image = image.resize((IMAGE_BASE_PREPROCESS_SIZE, IMAGE_BASE_PREPROCESS_SIZE), Image.Resampling.LANCZOS)
+                    image = image.resize(
+                        (IMAGE_BASE_PREPROCESS_SIZE, IMAGE_BASE_PREPROCESS_SIZE), Image.Resampling.LANCZOS
+                    )
 
-                    image = image.resize((resize_size, resize_size), Image.Resampling.LANCZOS) # also resize to size seen at train time
+                    image = image.resize(
+                        (resize_size, resize_size), Image.Resampling.LANCZOS
+                    )  # also resize to size seen at train time
                     image = image.convert("RGB")
                     rollout_images.append(np.array(image))
                     normalized_action = get_vla_action(vlm, image, instruction, tokenizer, action_tokenizer, device)
                     action = unnormalize_action(normalized_action, metadata)
-                    action = normalize_gripper_action(action) # gripper action: [0,1] -> [-1,+1] (because the env expects the latter) # TODO
+                    action = normalize_gripper_action(
+                        action
+                    )  # gripper action: [0,1] -> [-1,+1] (because the env expects the latter) # TODO
                     obs, reward, done, truncated, info = env.step(action)
-                    if done == True:
+                    if done:
                         num_successes += 1
                         break
                     pbar.update()
                 except Exception as e:
                     print(f"Caught exception: {e}")
                     break
-            wandb.log({"rollout_video": wandb.Video(np.array(rollout_images))})
+            wandb.log({"rollout_video": wandb.Video(np.array(rollout_images).transpose(0, 3, 1, 2))})
             num_episodes += 1
             print(f"# episodes completed: {num_episodes}, # successes: {num_successes}")
 
 
 if __name__ == "__main__":
-    eval()
+    eval_policy()
