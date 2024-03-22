@@ -12,6 +12,7 @@ from typing import List, Optional, Union
 
 from huggingface_hub import hf_hub_download
 
+from prismatic.conf import ModelConfig
 from prismatic.models.materialize import get_llm_backbone_and_tokenizer, get_vision_backbone_and_transform
 from prismatic.models.registry import GLOBAL_REGISTRY, MODEL_REGISTRY
 from prismatic.models.vlms import PrismaticVLM
@@ -108,6 +109,70 @@ def load(
         vision_backbone,
         llm_backbone,
         arch_specifier=model_cfg["arch_specifier"],
+        freeze_weights=not load_for_training,
+    )
+
+    return vlm
+
+
+# === Load Pretrained VLA Model ===
+def load_vla(
+    model_path: Union[str, Path],
+    hf_token: Optional[str] = None,
+    cache_dir: Optional[Union[str, Path]] = None,
+    load_for_training: bool = False,
+) -> PrismaticVLM:
+    """Loads a pretrained VLA model directly from checkpoint path."""
+    overwatch.info(f"Loading from local checkpoint path `{model_path}`")
+
+    # Assert that the checkpoint path looks like: `..../<RUN_ID>/checkpoints/<CHECKPOINT_DIR>`
+    assert os.path.isfile(model_path)
+    assert model_path[-3:] == ".pt" and model_path.split('/')[-2] == "checkpoints" and len(model_path.split('/')) >= 3
+    run_dir = Path('/'.join(model_path.split('/')[:-2])) # `..../<RUN_ID>`
+
+    # Get paths for `config.json` and pretrained checkpoint
+    config_json, checkpoint_pt = run_dir / "config.json", model_path
+    assert config_json.exists(), f"Missing `config.json` for `{run_dir = }`"
+
+    # Load VLA Config from `config.json` and extract Model Config
+    with open(config_json, "r") as f:
+        vla_cfg = json.load(f)["vla"]
+        model_cfg = ModelConfig.get_choice_class(vla_cfg["base_vlm"])()
+
+    # = Load Individual Components necessary for Instantiating a VLM =
+    #   =>> Print Minimal Config
+    overwatch.info(
+        f"Found Config =>> Loading & Freezing [bold blue]{model_cfg.model_id}[/] with:\n"
+        f"             Vision Backbone =>> [bold]{model_cfg.vision_backbone_id}[/]\n"
+        f"             LLM Backbone    =>> [bold]{model_cfg.llm_backbone_id}[/]\n"
+        f"             Arch Specifier  =>> [bold]{model_cfg.arch_specifier}[/]\n"
+        f"             Checkpoint Path =>> [underline]`{checkpoint_pt}`[/]"
+    )
+
+    # Load Vision Backbone
+    overwatch.info(f"Loading Vision Backbone [bold]{model_cfg.vision_backbone_id}[/]")
+    vision_backbone, image_transform = get_vision_backbone_and_transform(
+        model_cfg.vision_backbone_id,
+        model_cfg.image_resize_strategy,
+    )
+
+    # Load LLM Backbone --> note `inference_mode = True` by default when calling `load()`
+    overwatch.info(f"Loading Pretrained LLM [bold]{model_cfg.llm_backbone_id}[/] via HF Transformers")
+    llm_backbone, tokenizer = get_llm_backbone_and_tokenizer(
+        model_cfg.llm_backbone_id,
+        llm_max_length=model_cfg.llm_max_length,
+        hf_token=hf_token,
+        inference_mode=not load_for_training,
+    )
+
+    # Load VLM using `from_pretrained` (clobbers HF syntax... eventually should reconcile)
+    overwatch.info(f"Loading VLM [bold blue]{model_cfg.model_id}[/] from Checkpoint")
+    vlm = PrismaticVLM.from_pretrained(
+        checkpoint_pt,
+        model_cfg.model_id,
+        vision_backbone,
+        llm_backbone,
+        arch_specifier=model_cfg.arch_specifier,
         freeze_weights=not load_for_training,
     )
 
