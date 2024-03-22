@@ -19,6 +19,7 @@ import tqdm
 from accelerate.utils import set_seed
 from PIL import Image
 from real2sim.utils.env.observation_utils import get_image_from_maniskill2_obs_dict
+from transforms3d.euler import euler2axangle
 
 import wandb
 from prismatic.conf import ModelConfig, ModelRegistry
@@ -80,25 +81,35 @@ def unnormalize_action(action, metadata, skip_gripper_action=True):
         out = action
         if len(action.shape) == 1:
             out[:-1] = 0.5 * (action[:-1] + 1) * (action_high[:-1] - action_low[:-1]) + action_low[:-1]
+
+            roll, pitch, yaw = action[3], action[4], action[5]
+            action_rotation_ax, action_rotation_angle = euler2axangle(roll, pitch, yaw)
+            out[3:6] = action_rotation_ax * action_rotation_angle
         else:
             out[:, :-1] = 0.5 * (action[:, :-1] + 1) * (action_high[:-1] - action_low[:-1]) + action_low[:-1]
+            for i in len(out):
+                roll, pitch, yaw = action[i, 3], action[i, 4], action[i, 5]
+                action_rotation_ax, action_rotation_angle = euler2axangle(roll, pitch, yaw)
+                out[i, 3:6] = action_rotation_ax * action_rotation_angle
+
     else:
         out = 0.5 * (action + 1) * (action_high - action_low) + action_low
+
+
     return out
 
 
 def normalize_gripper_action(action):
     """
-    Changes gripper action (last dimension of action vector) from [0,1] to [-1,+1].
+    Changes gripper action (last dimension of action vector) from [0,1] to [-1,+1] and binarizes.
     This is necessary because the dataset wrapper standardizes gripper actions to [0,1].
     Note that unlike the other action dimensions, the gripper action is not normalized to [-1,+1]
     by default by the dataset wrapper.
 
-    Normalization formula: y = 2 * (x - orig_low) / (orig_high - orig_low) - 1
+    Normalization formula: y = 2.0 * (x > 0.5) - 1.0
     """
-    # To implement, just normalize the last action to [-1,+1].
-    orig_low, orig_high = 0.0, 1.0
-    action[-1] = 2 * (action[-1] - orig_low) / (orig_high - orig_low) - 1
+    # To implement, just binarize and normalize the last action to [-1,+1].
+    action[-1] = 2.0 * (action[-1] > 0.5) - 1.0
     return action
 
 
