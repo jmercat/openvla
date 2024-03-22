@@ -8,7 +8,6 @@ Usage examples:
     VK_ICD_FILENAMES=/iris/u/moojink/prismatic-dev/nvidia_icd.json MS2_ASSET_DIR=/iris/u/moojink/Real2Sim/ManiSkill2_real2sim/data python vla-scripts/eval_vla_on_real2sim_env.py --model.type siglip-224px+7b --pretrained_checkpoint /sphinx/u/moojink/checkpoints/tri/prismatic-dev/runs/lr-2e5+siglip-224px+mx-bridge+n1+b32+x7/checkpoints/step-080000-epoch-09-loss=0.0987.pt
 """
 import draccus
-import glob
 import imageio
 import json
 import numpy as np
@@ -16,6 +15,8 @@ import os
 import real2sim
 import time
 import torch
+import wandb
+import tqdm
 from accelerate.utils import set_seed
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -30,6 +31,8 @@ from typing import Optional, Tuple, Type, Union
 
 assert 'MS2_ASSET_DIR' in os.environ, "Environment variable MS2_ASSET_DIR not set. Usage: `MS2_ASSET_DIR=./ManiSkill2_real2sim/data python test_real2sim.py ...`"
 
+NUM_EPISODES = 5
+MAX_STEPS = 100     # TODO: retrieve this from env
 ACTION_DIM = 7
 np.set_printoptions(formatter={'float': lambda x: "{0:0.2f}".format(x)})
 TIME = time.strftime("%Y_%m_%d-%H_%M_%S")
@@ -38,20 +41,6 @@ TIME = time.strftime("%Y_%m_%d-%H_%M_%S")
 def get_image_resize_size(vision_backbone_id: str) -> Tuple[int, int]:
     """Gets image resize size from vision backbone ID."""
     return VISION_BACKBONES[vision_backbone_id]["kwargs"]["default_image_size"]
-
-
-def save_rollout_gif(rollout_images, idx, success, task_description):
-    os.makedirs('./rollouts', exist_ok=True)
-    processed_task_description = (
-        task_description
-        .lower()
-        .replace(" ", "_")
-        .replace("\n", "_")
-        .replace(".", "_")[:40]
-    )
-    gif_path = f'./rollouts/rollout-{TIME}-{idx+1}-success={success}-task={processed_task_description}.gif'
-    imageio.mimsave(gif_path, rollout_images, loop=0, fps=30)
-    print(f'Saved rollout GIF at path {gif_path}')
 
 
 def get_vla_action(vlm, image, task_description, tokenizer, action_tokenizer, device):
@@ -147,8 +136,10 @@ class GenerateConfig:
 @draccus.wrap()
 def eval(cfg: GenerateConfig) -> None:
     resize_size = get_image_resize_size(cfg.model.vision_backbone_id)
-    debug = False
     assert cfg.pretrained_checkpoint is not None, "cfg.pretrained_checkpoint must not be None!"
+
+    # initialize logging
+    wandb.init(project="openvla", name=f"EVAL_{cfg.model.type}_{cfg.env_name}", entity="clvr")
 
     # Get action unnormalization stats.
     dataset_statistics_path = "/shared/karl/models/open_vla/lr-2e5+siglip-224px+mx-bridge+n1+b32+x7/" \
@@ -180,26 +171,24 @@ def eval(cfg: GenerateConfig) -> None:
     # Start evaluation.
     num_episodes = 0
     num_successes = 0
-    for i in range(10):
-        # Initialize the real2sim environment.
-        env = real2sim.make(cfg.env_name)
-        for j in range(5):
-            # Reset environment.
-            obs, reset_info = env.reset()
-            # Setup.
-            t = 0
-            os.makedirs('./temp', exist_ok=True)
-            instruction = env.get_language_instruction()
-            print(f'Task: {instruction}')
-            rollout_images = []
-            print(f"Starting episode {i+1}...")
-            done, truncated = False, False
+    # Initialize the real2sim environment.
+    env = real2sim.make(cfg.env_name)
+    for j in range(NUM_EPISODES):
+        # Reset environment.
+        obs, reset_info = env.reset()
+        # Setup.
+        t = 0
+        instruction = env.get_language_instruction()
+        print(f'Task: {instruction}')
+        rollout_images = []
+        print(f"Starting episode {j+1}...")
+        done, truncated = False, False
+        with tqdm.tqdm(total=MAX_STEPS) as pbar:
             while not (done or truncated):
                 try:
                     t += 1
                     print(f't: {t}')
                     image = get_image_from_maniskill2_obs_dict(env, obs)
-                    rollout_images.append(image)
                     image = Image.fromarray(image)
 
                     # Preprocess the image the exact same way that the Berkeley Bridge folks did it
@@ -212,20 +201,19 @@ def eval(cfg: GenerateConfig) -> None:
 
                     image = image.resize((resize_size, resize_size), Image.Resampling.LANCZOS) # also resize to size seen at train time
                     image = image.convert("RGB")
-                    image.save(f'temp/{t}.png')
+                    rollout_images.append(np.array(image))
                     normalized_action = get_vla_action(vlm, image, instruction, tokenizer, action_tokenizer, device)
-                    print('normalized_action:', normalized_action)
                     action = unnormalize_action(normalized_action, metadata)
                     action = normalize_gripper_action(action) # gripper action: [0,1] -> [-1,+1] (because the env expects the latter) # TODO
-                    print('action:', action)
                     obs, reward, done, truncated, info = env.step(action)
                     if done == True:
                         num_successes += 1
                         break
+                    pbar.update()
                 except Exception as e:
                     print(f"Caught exception: {e}")
                     break
-            save_rollout_gif(rollout_images, num_episodes, success=done, task_description=instruction)
+            wandb.log({"rollout_video": wandb.Video(np.array(rollout_images))})
             num_episodes += 1
             print(f"# episodes completed: {num_episodes}, # successes: {num_successes}")
 
