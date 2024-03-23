@@ -95,7 +95,18 @@ def unnormalize_action(action, metadata, skip_gripper_action=True):
     else:
         out = 0.5 * (action + 1) * (action_high - action_low) + action_low
 
-
+    # convert rotation to axis angle and map gripper range
+    if len(out.shape) == 1:
+        roll, pitch, yaw = out[3], out[4], out[5]
+        action_rotation_ax, action_rotation_angle = euler2axangle(roll, pitch, yaw)
+        out[3:6] = action_rotation_ax * action_rotation_angle
+        out[-1] = 2 * out[-1] - 1
+    else:
+        for i in len(out):
+            roll, pitch, yaw = out[i, 3], out[i, 4], out[i, 5]
+            action_rotation_ax, action_rotation_angle = euler2axangle(roll, pitch, yaw)
+            out[i, 3:6] = action_rotation_ax * action_rotation_angle
+            out[i, -1] = 2 * out[i, -1] - 1
     return out
 
 
@@ -152,7 +163,7 @@ def eval_policy(cfg: GenerateConfig) -> None:
     assert cfg.pretrained_checkpoint is not None, "cfg.pretrained_checkpoint must not be None!"
 
     # initialize logging
-    wandb.init(project="openvla", name=f"EVAL_{cfg.model.model_id}_{cfg.env_name}", entity="clvr")
+    wandb.init(project="openvla", name=f"EVAL_{cfg.model.model_id}_{cfg.env_name}_{TIME}", entity="clvr")
 
     # Get action unnormalization stats.
     dataset_statistics_path = (
@@ -183,6 +194,10 @@ def eval_policy(cfg: GenerateConfig) -> None:
     tokenizer = vlm.llm_backbone.get_tokenizer()
     action_tokenizer = ActionTokenizer(tokenizer)
 
+    # import tensorflow_datasets as tfds
+    # ds = tfds.load("bridge_dataset", data_dir="gs://rail-orca-central2/resize_256_256", split="train")
+    # ep_it = iter(ds)
+
     # Start evaluation.
     num_episodes = 0
     num_successes = 0
@@ -191,6 +206,8 @@ def eval_policy(cfg: GenerateConfig) -> None:
     for j in range(NUM_EPISODES):
         # Reset environment.
         obs, reset_info = env.reset()
+        # ep = next(ep_it)
+        # step_it = iter(ep["steps"])
         # Setup.
         t = 0
         instruction = env.get_language_instruction()
@@ -203,6 +220,10 @@ def eval_policy(cfg: GenerateConfig) -> None:
                 try:
                     t += 1
                     image = get_image_from_maniskill2_obs_dict(env, obs)
+
+                    # step = next(step_it)
+                    # image = step["observation"]["image_0"].numpy()
+
                     image = Image.fromarray(image)
 
                     # Preprocess the image the exact same way that the Berkeley Bridge folks did it
@@ -221,10 +242,11 @@ def eval_policy(cfg: GenerateConfig) -> None:
                     image = image.convert("RGB")
                     rollout_images.append(np.array(image))
                     normalized_action = get_vla_action(vlm, image, instruction, tokenizer, action_tokenizer, device)
-                    action = unnormalize_action(normalized_action, metadata)
-                    action = normalize_gripper_action(
-                        action
-                    )  # gripper action: [0,1] -> [-1,+1] (because the env expects the latter) # TODO
+                    action = unnormalize_action(normalized_action, metadata, skip_gripper_action=False)
+                    print(action)
+                    # action = normalize_gripper_action(
+                    #    action
+                    # )  # gripper action: [0,1] -> [-1,+1] (because the env expects the latter) # TODO
                     obs, reward, done, truncated, info = env.step(action)
                     if done:
                         num_successes += 1
