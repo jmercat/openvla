@@ -5,7 +5,7 @@ Runs a VLA checkpoint on samples from a dataset.
 (Sanity check to ensure we are doing test-time inference correctly.)
 
 Usage:
-    python vla-scripts/eval_vla_on_data.py \
+    python experiments/debug/eval_vla_on_data.py \
         --vla.type <VLA_TRAINING_CONFIG_NAME> \
         --data_root_dir <BASE_DATASETS_DIR> \
         --pretrained_checkpoint <CHECKPOINT_PATH>

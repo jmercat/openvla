@@ -4,7 +4,7 @@ eval_vla_on_bridge_env.py
 Runs a VLA checkpoint in a real-world Bridge V2 environment.
 
 Usage:
-    python vla-scripts/eval_vla_on_bridge_env.py \
+    python experiments/robot/eval_vla_on_bridge_env.py \
         --model.type <VLM_TYPE> \
         --pretrained_checkpoint <CHECKPOINT_PATH> \
         --data_stats_path ./experiments/dataset_statistics/bridge_stats.json
@@ -117,6 +117,22 @@ def save_rollout_gif(rollout_images, idx):
     print(f"Saved rollout GIF at path {gif_path}")
 
 
+def get_img(obs, resize_size):
+    """Extracts image from observations and preprocesses it."""
+    # Preprocess the image the exact same way that the Berkeley Bridge folks did it
+    # to minimize distribution shift.
+    # NOTE (Moo Jin): Yes, we resize down to 256x256 first even though the image may end up being
+    # resized up to a different resolution by some models. This is just so that we're in-distribution
+    # w.r.t. the original preprocessing at train time.
+    img = obs["pixels"][0]
+    img = Image.fromarray(img)
+    BRIDGE_ORIG_IMG_SIZE = 256
+    img = img.resize((BRIDGE_ORIG_IMG_SIZE, BRIDGE_ORIG_IMG_SIZE), Image.Resampling.LANCZOS)
+    img = img.resize((resize_size, resize_size), Image.Resampling.LANCZOS)  # also resize to size seen at train time
+    img = img.convert("RGB")
+    return img
+
+
 def get_vla_action(vla, image, task_label, tokenizer, action_tokenizer):
     """Generates an action with the VLA policy."""
     assert image.size[0] == image.size[1]
@@ -224,19 +240,8 @@ def main(cfg: GenerateConfig) -> None:
                 if time.time() > last_tstamp + step_duration:
                     print(f"t: {t}")
                     last_tstamp = time.time()
-                    # Preprocess the image the exact same way that the Berkeley Bridge folks did it
-                    # to minimize distribution shift.
-                    # NOTE (Moo Jin): Yes, we resize down to 256x256 first even though the image may end up being
-                    # resized up to a different resolution by some models. This is just so that we're in-distribution
-                    # w.r.t. the original preprocessing at train time.
-                    img = obs["pixels"][0]
-                    img = Image.fromarray(img)
-                    img_size = 256
-                    img = img.resize((img_size, img_size), Image.Resampling.LANCZOS)
-                    img = img.resize(
-                        (resize_size, resize_size), Image.Resampling.LANCZOS
-                    )  # also resize to size seen at train time
-                    img = img.convert("RGB")
+                    # Get preprocessed image.
+                    img = get_img(obs, resize_size)
                     # Generate action with VLA model.
                     normalized_action = get_vla_action(vla, img, task_label, tokenizer, action_tokenizer)
                     action = unnormalize_action(normalized_action, metadata)
