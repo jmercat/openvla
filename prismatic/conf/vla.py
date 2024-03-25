@@ -174,7 +174,7 @@ class Exp_SigLIP_224px_OXE_Magic_Soup(Exp_LLaVa15_Bridge):
     base_vlm: Union[str, Path] = "siglip-224px+7b"
     freeze_vision_backbone: bool = False
 
-    data_mix = "oxe_magic_soup"
+    data_mix: str = "oxe_magic_soup"
 
     expected_world_size: int = 64
     global_batch_size: int = 2048
