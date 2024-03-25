@@ -167,6 +167,22 @@ class Exp_LR1E4_SigLIP_224px_Bridge(Exp_LLaVa15_Bridge):
     learning_rate: float = 1e-4
 
 
+# === [64 GPU] SigLIP 224px + OXE Magic Soup ===
+@dataclass
+class Exp_SigLIP_224px_OXE_Magic_Soup(Exp_LLaVa15_Bridge):
+    vla_id: str = "siglip-224px+mx-oxe-magic-soup"
+    base_vlm: Union[str, Path] = "siglip-224px+7b"
+    freeze_vision_backbone: bool = False
+
+    data_mix = "oxe_magic_soup"
+
+    expected_world_size: int = 64
+    global_batch_size: int = 2048
+    per_device_batch_size: int = 32
+
+    learning_rate: float = 2e-5
+
+
 # === Define a VLA Registry Enum for Reference & Validation ===
 @unique
 class VLARegistry(Enum):
@@ -186,6 +202,9 @@ class VLARegistry(Enum):
     LR_2E5_SIGLIP_224PX_MX_BRIDGE = Exp_LR2E5_SigLIP_224px_Bridge
     LR_4E5_SIGLIP_224PX_MX_BRIDGE = Exp_LR4E5_SigLIP_224px_Bridge
     LR_1E4_SIGLIP_224PX_MX_BRIDGE = Exp_LR1E4_SigLIP_224px_Bridge
+
+    # [03/21] OXE Magic Soup Run
+    SIGLIP_224PX_MX_OXE_MAGIC_SOUP = Exp_SigLIP_224px_OXE_Magic_Soup
 
     @property
     def vla_id(self) -> str:
