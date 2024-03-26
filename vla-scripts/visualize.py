@@ -50,8 +50,8 @@ class VisualizeConfig:
     data_root_dir: str = "/shared/karl/data"
 
     # Eval params
-    eval_batch_size: int = 96
-    eval_batches: int = 32
+    eval_batch_size: int = 1                                    # Currently only support batch size 1 inference
+    eval_batches: int = 128
 
     # Model params
     action_dim: int = 7
