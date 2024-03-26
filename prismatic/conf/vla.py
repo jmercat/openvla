@@ -149,6 +149,15 @@ class Exp_LR2E5_SigLIP_224px_Bridge(Exp_LLaVa15_Bridge):
     learning_rate: float = 2e-5
 
 
+# === [8 GPU] Fast Iteration =>> SigLIP 224px + DROID ===
+@dataclass
+class Exp_SigLIP_224px_DROID(Exp_LLaVa15_Bridge):
+    vla_id: str = "siglip-224px+mx-droid"
+    base_vlm: Union[str, Path] = "siglip-224px+7b"
+
+    data_mix: str = "droid"
+
+
 # === Define a VLA Registry Enum for Reference & Validation ===
 @unique
 class VLARegistry(Enum):
@@ -166,6 +175,8 @@ class VLARegistry(Enum):
 
     LR_1E5_SIGLIP_224PX_ICY_MX_BRIDGE = Exp_LR1E5_SigLIP_224px_Bridge
     LR_2E5_SIGLIP_224PX_ICY_MX_BRIDGE = Exp_LR2E5_SigLIP_224px_Bridge
+
+    SIGLIP_224PX_MX_DROID = Exp_SigLIP_224px_DROID
 
     @property
     def vla_id(self) -> str:
