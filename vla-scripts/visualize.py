@@ -4,16 +4,16 @@ visualize.py
 Post-hoc computes train/val metrics for VLA checkpoints and visualizes predictions.
 
 Usage:
-    python scripts/visualize.py \
+    python vla-scripts/visualize.py \
         --vla.type <VLA_TRAINING_CONFIG_NAME> \
         --data_root_dir <BASE_DATASETS_DIR> \
         --pretrained_checkpoint <CHECKPOINT_PATH>
 """
 
 import copy
+import logging
 import os
 import time
-import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Union
@@ -21,12 +21,12 @@ from typing import Union
 import draccus
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
 import tqdm
+from torch.utils.data import DataLoader
 
 import wandb
-from prismatic.models import load_vla
 from prismatic.conf import VLAConfig, VLARegistry
+from prismatic.models import load_vla
 from prismatic.vla import get_vla_dataset_and_collator
 
 ACTION_DIM = 7
@@ -50,7 +50,7 @@ class VisualizeConfig:
     data_root_dir: str = "/shared/karl/data"
 
     # Eval params
-    eval_batch_size: int = 128
+    eval_batch_size: int = 96
     eval_batches: int = 32
 
     # HF Hub Credentials (for LLaMa-2)
@@ -104,29 +104,23 @@ def make_data_loader(cfg, vla, train):
     return dataloader, action_tokenizer
 
 
-def compute_metrics(
-    action_tokenizer, ground_truth_action_token_ids, predicted_action_token_ids
-):
+def compute_metrics(action_tokenizer, ground_truth_action_token_ids, predicted_action_token_ids):
     """
     Returns tuple (action tokens accuracy, L1 loss) given predicted and ground-truth action token IDs.
     """
     # Compute action tokens accuracy
-    actions_accuracy = (
-        (predicted_action_token_ids == ground_truth_action_token_ids).type(torch.bfloat16)
-    ).item()
+    actions_accuracy = (predicted_action_token_ids == ground_truth_action_token_ids).cpu().numpy()
 
     # Compute L1 loss
-    ground_truth_actions = (
-        action_tokenizer.decode_token_ids_to_actions(ground_truth_action_token_ids.cpu().numpy())
+    ground_truth_actions = action_tokenizer.decode_token_ids_to_actions(ground_truth_action_token_ids.cpu().numpy())
+    predicted_actions = action_tokenizer.decode_token_ids_to_actions(predicted_action_token_ids.cpu().numpy())
+    l1_loss = (
+        torch.nn.functional.l1_loss(
+            torch.Tensor(predicted_actions), torch.Tensor(ground_truth_actions), reduction="none"
+        )
+        .cpu()
+        .numpy()
     )
-    predicted_actions = (
-        action_tokenizer.decode_token_ids_to_actions(predicted_action_token_ids.cpu().numpy())
-    )
-    l1_loss = torch.nn.functional.l1_loss(
-        torch.Tensor(predicted_actions),
-        torch.Tensor(ground_truth_actions),
-        reduction="none"
-    ).item()
 
     return {
         "accuracy": actions_accuracy,
@@ -180,10 +174,9 @@ def eval_on_dataset(data_loader, vla, action_tokenizer, cfg):
                 for k in metrics:
                     metrics[k] = np.concatenate((metrics[k], batch_metrics[k]))
 
+            progress.update()
             if idx == cfg.eval_batches - 1:
                 break
-
-            progress.update()
 
     # compute averages globally and per dimension
     log_metrics = {}
@@ -191,7 +184,7 @@ def eval_on_dataset(data_loader, vla, action_tokenizer, cfg):
         log_metrics[f"avg_{key}"] = metrics[key].mean()
         if len(metrics[key].shape) == 2:
             for dim in range(metrics[key].shape[1]):
-                log_metrics[f"dim{dim + 1}_{key}"] = metrics[key].mean(axis=1)[dim]
+                log_metrics[f"dim{dim + 1}_{key}"] = metrics[key].mean(axis=0)[dim]
 
     return log_metrics
 
@@ -217,12 +210,10 @@ def visualize_policy(cfg: VisualizeConfig) -> None:
     # Dataset evaluations
     logging.info("Running offline evaluations...")
     train_metrics = eval_on_dataset(train_loader, vla, action_tokenizer, cfg)
-    wandb.log({"train": train_metrics})
+    wandb.log({"train/": train_metrics})
     val_metrics = eval_on_dataset(val_loader, vla, action_tokenizer, cfg)
-    wandb.log({"val": val_metrics})
+    wandb.log({"val/": val_metrics})
 
 
 if __name__ == "__main__":
     visualize_policy()
-
-
