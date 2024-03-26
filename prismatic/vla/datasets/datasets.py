@@ -72,6 +72,7 @@ class RLDSDataset(IterableDataset):
         batch_transform: RLDSBatchTransform,
         resize_resolution: Tuple[int, int],
         shuffle_buffer_size: int = 256_000,
+        train: bool = True,
     ) -> None:
         """Lightweight wrapper around RLDS TFDS Pipeline for use with PyTorch/OpenVLA Data Loaders."""
         self.data_root_dir, self.data_mix, self.batch_transform = data_root_dir, data_mix, batch_transform
@@ -120,7 +121,7 @@ class RLDSDataset(IterableDataset):
             balance_weights=True,
             traj_transform_threads=len(mixture_spec),
             traj_read_threads=len(mixture_spec),
-            train=True,
+            train=train,
         )
         # fmt: on
 
