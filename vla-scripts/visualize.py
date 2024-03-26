@@ -11,6 +11,7 @@ Usage:
 """
 
 import copy
+import glob
 import logging
 import os
 import time
@@ -29,7 +30,6 @@ from prismatic.conf import VLAConfig, VLARegistry
 from prismatic.models import load_vla
 from prismatic.vla import get_vla_dataset_and_collator
 
-ACTION_DIM = 7
 DEVICE = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
 DATE_TIME = time.strftime("%Y_%m_%d-%H_%M_%S")
 
@@ -53,6 +53,9 @@ class VisualizeConfig:
     eval_batch_size: int = 96
     eval_batches: int = 32
 
+    # Model params
+    action_dim: int = 7
+
     # HF Hub Credentials (for LLaMa-2)
     hf_token: Union[str, Path] = Path(".hf_token")              # Environment variable or Path to HF Token
 
@@ -65,11 +68,19 @@ class VisualizeConfig:
     # fmt: on
 
 
-def get_vla(cfg):
+def get_checkpoint_paths(cfg):
+    if cfg.pretrained_checkpoint.endswith(".pt"):
+        # Passed a single checkpoint
+        return [cfg.pretrained_checkpoint]
+    else:
+        return sorted(glob.glob(os.path.join(cfg.pretrained_checkpoint, "*.pt")))
+
+
+def get_vla(checkpoint_path, cfg):
     """Loads and returns a VLA model from checkpoint."""
-    logging.info(f"Loading VLA from checkpoint: {cfg.pretrained_checkpoint}")
+    logging.info(f"Loading VLA from checkpoint: {checkpoint_path}")
     hf_token = cfg.hf_token.read_text().strip() if isinstance(cfg.hf_token, Path) else os.environ[cfg.hf_token]
-    vla = load_vla(cfg.pretrained_checkpoint, hf_token=hf_token, load_for_training=False)
+    vla = load_vla(checkpoint_path, hf_token=hf_token, load_for_training=False)
     for param in vla.parameters():
         assert param.dtype == torch.float32, f"Loaded VLA parameter not in full precision: {param}"
 
@@ -128,7 +139,7 @@ def compute_metrics(action_tokenizer, ground_truth_action_token_ids, predicted_a
     }
 
 
-def eval_on_batch(batch, vla, action_tokenizer):
+def eval_on_batch(batch, vla, action_tokenizer, action_dim):
     """
     Evaluates model on input batch without using teacher forcing.
     Leverages the model's `generate()` function.
@@ -138,14 +149,14 @@ def eval_on_batch(batch, vla, action_tokenizer):
     inputs = copy.deepcopy(batch)
 
     # Remove the action tokens from the prompt.
-    ground_truth_action_token_ids = inputs["labels"][:, -1 - ACTION_DIM : -1]
-    inputs["input_ids"] = inputs["input_ids"][:, : -ACTION_DIM - 1]
-    inputs["labels"] = inputs["labels"][:, : -ACTION_DIM - 1]
-    inputs["attention_mask"] = inputs["attention_mask"][:, : -ACTION_DIM - 1]
+    ground_truth_action_token_ids = inputs["labels"][:, -1 - action_dim : -1]
+    inputs["input_ids"] = inputs["input_ids"][:, : -action_dim - 1]
+    inputs["labels"] = inputs["labels"][:, : -action_dim - 1]
+    inputs["attention_mask"] = inputs["attention_mask"][:, : -action_dim - 1]
 
     # Call `generate()` to generate action tokens.
-    generated_ids = vla.generate(**inputs, max_new_tokens=ACTION_DIM, do_sample=False)
-    predicted_action_token_ids = generated_ids[:, -ACTION_DIM:]
+    generated_ids = vla.generate(**inputs, max_new_tokens=action_dim, do_sample=False)
+    predicted_action_token_ids = generated_ids[:, -action_dim:]
 
     # Compute action tokens accuracy and L1 loss.
     return compute_metrics(
@@ -167,7 +178,7 @@ def eval_on_dataset(data_loader, vla, action_tokenizer, cfg):
                     batch[k] = batch[k].to(dtype=vla.llm_backbone.half_precision_dtype)
 
             # Generate actions via autoregressive sampling: via `generate()`
-            batch_metrics = eval_on_batch(batch, vla, action_tokenizer)
+            batch_metrics = eval_on_batch(batch, vla, action_tokenizer, cfg.action_dim)
             if metrics is None:
                 metrics = batch_metrics
             else:
@@ -199,20 +210,27 @@ def visualize_policy(cfg: VisualizeConfig) -> None:
         name=f"VIS-{cfg.vla.vla_id}-{DATE_TIME}",
     )
 
-    # Get VLA policy
-    vla = get_vla(cfg)
+    checkpoint_paths = get_checkpoint_paths(cfg)
+    logging.info(f"Evaluating {len(checkpoint_paths)} checkpoint paths: {checkpoint_paths}")
+    for checkpoint_path in checkpoint_paths:
+        # Get checkpoint step
+        step = int(os.path.basename(checkpoint_path).split("-")[1])
+        logging.info(f"Evaluating checkpoint for step {step}...")
 
-    # Get VLA dataset and collator for train and val
-    logging.info(f"Creating VLA Open-X Dataset with Mixture `{cfg.vla.data_mix}`")
-    train_loader, action_tokenizer = make_data_loader(cfg, vla, train=True)
-    val_loader, _ = make_data_loader(cfg, vla, train=False)
+        # Get VLA policy
+        vla = get_vla(checkpoint_path, cfg)
 
-    # Dataset evaluations
-    logging.info("Running offline evaluations...")
-    train_metrics = eval_on_dataset(train_loader, vla, action_tokenizer, cfg)
-    wandb.log({"train/": train_metrics})
-    val_metrics = eval_on_dataset(val_loader, vla, action_tokenizer, cfg)
-    wandb.log({"val/": val_metrics})
+        # Get VLA dataset and collator for train and val
+        logging.info(f"Creating VLA Open-X Dataset with Mixture `{cfg.vla.data_mix}`")
+        train_loader, action_tokenizer = make_data_loader(cfg, vla, train=True)
+        val_loader, _ = make_data_loader(cfg, vla, train=False)
+
+        # Dataset evaluations
+        logging.info("Running offline evaluations...")
+        train_metrics = eval_on_dataset(train_loader, vla, action_tokenizer, cfg)
+        wandb.log({"train/": train_metrics}, step=step)
+        val_metrics = eval_on_dataset(val_loader, vla, action_tokenizer, cfg)
+        wandb.log({"val/": val_metrics}, step=step)
 
 
 if __name__ == "__main__":
