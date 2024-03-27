@@ -29,6 +29,7 @@ def get_vla_dataset_and_collator(
     predict_stop_token: bool = True,
     shuffle_buffer_size: int = 100_000,
     train: bool = True,
+    episodic: bool = False,
 ) -> Tuple[Dataset, ActionTokenizer, PaddedCollatorForActionPrediction]:
     # Instantiate VLA ActionTokenizer (extends base tokenizer)
     action_tokenizer = ActionTokenizer(tokenizer)
@@ -47,6 +48,7 @@ def get_vla_dataset_and_collator(
         resize_resolution=default_image_resolution[1:],
         shuffle_buffer_size=shuffle_buffer_size,
         train=train,
+        episodic=episodic,
     )
 
     return dataset, action_tokenizer, collator

@@ -17,7 +17,7 @@ from transformers import PreTrainedTokenizerBase
 from prismatic.models.backbones.llm.prompting import PromptBuilder
 from prismatic.models.backbones.vision import ImageTransform
 from prismatic.vla.action_tokenizer import ActionTokenizer
-from prismatic.vla.datasets.rlds import make_interleaved_dataset
+from prismatic.vla.datasets.rlds import make_interleaved_dataset, make_single_dataset
 from prismatic.vla.datasets.rlds.oxe import OXE_NAMED_MIXTURES, get_oxe_dataset_kwargs_and_weights
 
 # HuggingFace Default / LLaMa-2 IGNORE_INDEX (for labels)
@@ -73,12 +73,18 @@ class RLDSDataset(IterableDataset):
         resize_resolution: Tuple[int, int],
         shuffle_buffer_size: int = 256_000,
         train: bool = True,
+        episodic: bool = False,
     ) -> None:
         """Lightweight wrapper around RLDS TFDS Pipeline for use with PyTorch/OpenVLA Data Loaders."""
         self.data_root_dir, self.data_mix, self.batch_transform = data_root_dir, data_mix, batch_transform
+        self.episodic = episodic
 
         # Configure RLDS Dataset(s)
-        mixture_spec = OXE_NAMED_MIXTURES[self.data_mix]
+        if self.data_mix in OXE_NAMED_MIXTURES:
+            mixture_spec = OXE_NAMED_MIXTURES[self.data_mix]
+        else:
+            # Assume that passed "mixture" name is actually a single dataset -- create single-dataset "mix"
+            mixture_spec = [(self.data_mix, 1.0)]
 
         # fmt: off
         per_dataset_kwargs, weights = get_oxe_dataset_kwargs_and_weights(
@@ -126,11 +132,23 @@ class RLDSDataset(IterableDataset):
         # fmt: on
 
         # Initialize RLDS Dataset
-        self.dataset, self.dataset_length = make_interleaved_dataset(**rlds_config)
+        if self.episodic:
+            assert len(per_dataset_kwargs) == 1, "Only support single-dataset `mixes` for episodic datasets."
+            self.dataset, self.dataset_length = make_single_dataset(
+                per_dataset_kwargs[0],
+                train=train,
+                traj_transform_kwargs=rlds_config["traj_transform_kwargs"],
+                frame_transform_kwargs=rlds_config["frame_transform_kwargs"],
+            )
+        else:
+            self.dataset, self.dataset_length = make_interleaved_dataset(**rlds_config)
 
     def __iter__(self) -> Dict[str, Any]:
         for rlds_batch in self.dataset.as_numpy_iterator():
-            yield self.batch_transform(rlds_batch)
+            if not self.episodic:
+                yield self.batch_transform(rlds_batch)
+            else:
+                yield [self.batch_transform(step) for step in rlds_batch]
 
     def __len__(self) -> int:
         return self.dataset_length

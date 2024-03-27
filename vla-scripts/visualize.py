@@ -9,6 +9,9 @@ Usage:
         --data_root_dir <BASE_DATASETS_DIR> \
         --pretrained_checkpoint <CHECKPOINT_PATH>
 """
+import matplotlib
+
+matplotlib.use("Agg")
 
 import copy
 import glob
@@ -18,6 +21,9 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Union
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+import matplotlib.gridspec as gridspec
+import matplotlib.pyplot as plt
 
 import draccus
 import numpy as np
@@ -51,7 +57,8 @@ class VisualizeConfig:
 
     # Eval params
     eval_batch_size: int = 1                                    # Currently only support batch size 1 inference
-    eval_batches: int = 128
+    eval_batches: int = 1024
+    eval_episodes: int = 5
 
     # Model params
     action_dim: int = 7
@@ -101,7 +108,7 @@ def make_data_loader(cfg, vla, train):
         tokenizer=vla.llm_backbone.get_tokenizer(),
         prompt_builder_fn=vla.llm_backbone.prompt_builder_fn,
         default_image_resolution=vla.vision_backbone.default_image_resolution,
-        shuffle_buffer_size=10000,
+        shuffle_buffer_size=100000,
         train=train,
     )
     # Create dataloader.
@@ -109,6 +116,28 @@ def make_data_loader(cfg, vla, train):
         vla_dataset,
         batch_size=cfg.eval_batch_size,
         collate_fn=collator,
+        num_workers=0,
+        shuffle=False,
+    )
+    return dataloader, action_tokenizer
+
+
+def make_episode_dataset(cfg, vla, train):
+    image_transform = vla.vision_backbone.get_image_transform()
+    vla_dataset, action_tokenizer, _ = get_vla_dataset_and_collator(
+        cfg.data_root_dir,
+        cfg.vla.data_mix,
+        image_transform=image_transform,
+        tokenizer=vla.llm_backbone.get_tokenizer(),
+        prompt_builder_fn=vla.llm_backbone.prompt_builder_fn,
+        default_image_resolution=vla.vision_backbone.default_image_resolution,
+        shuffle_buffer_size=10000,
+        train=train,
+    )
+    # Create dataloader.
+    dataloader = DataLoader(
+        vla_dataset,
+        batch_size=1,
         num_workers=0,
         shuffle=False,
     )
@@ -139,7 +168,7 @@ def compute_metrics(action_tokenizer, ground_truth_action_token_ids, predicted_a
     }
 
 
-def eval_on_batch(batch, vla, action_tokenizer, action_dim):
+def run_on_batch(batch, vla, action_dim):
     """
     Evaluates model on input batch without using teacher forcing.
     Leverages the model's `generate()` function.
@@ -157,13 +186,7 @@ def eval_on_batch(batch, vla, action_tokenizer, action_dim):
     # Call `generate()` to generate action tokens.
     generated_ids = vla.generate(**inputs, max_new_tokens=action_dim, do_sample=False)
     predicted_action_token_ids = generated_ids[:, -action_dim:]
-
-    # Compute action tokens accuracy and L1 loss.
-    return compute_metrics(
-        action_tokenizer,
-        ground_truth_action_token_ids,
-        predicted_action_token_ids,
-    )
+    return ground_truth_action_token_ids, predicted_action_token_ids
 
 
 def eval_on_dataset(data_loader, vla, action_tokenizer, cfg):
@@ -178,7 +201,12 @@ def eval_on_dataset(data_loader, vla, action_tokenizer, cfg):
                     batch[k] = batch[k].to(dtype=vla.llm_backbone.half_precision_dtype)
 
             # Generate actions via autoregressive sampling: via `generate()`
-            batch_metrics = eval_on_batch(batch, vla, action_tokenizer, cfg.action_dim)
+            gt_actions, pred_actions = run_on_batch(batch, vla, cfg.action_dim)
+            batch_metrics = compute_metrics(
+                action_tokenizer,
+                gt_actions,
+                pred_actions,
+            )
             if metrics is None:
                 metrics = batch_metrics
             else:
@@ -198,6 +226,65 @@ def eval_on_dataset(data_loader, vla, action_tokenizer, cfg):
                 log_metrics[f"dim{dim + 1}_{key}"] = metrics[key].mean(axis=0)[dim]
 
     return log_metrics
+
+
+class WandBFigure:
+    def __init__(self, save_to=None, **figure_kwargs):
+        self.fig = plt.figure(**figure_kwargs)
+        self.canvas = FigureCanvas(self.fig)
+
+    def __enter__(self):
+        return plt.figure(self.fig.number)
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.canvas.draw()
+        out_image = np.frombuffer(self.canvas.tostring_rgb(), dtype="uint8")
+        self.image = out_image.reshape(self.fig.canvas.get_width_height()[::-1] + (3,))
+        plt.close(self.fig)
+
+
+def plot_action_episodes(gt_actions, pred_actions):
+    n_act_dims = gt_actions.shape[-1]
+    grid_size = int(np.ceil(np.sqrt(n_act_dims)))
+    wandb_figure = WandBFigure(figsize=(grid_size * 5, grid_size * 5))
+    gs = gridspec.GridSpec(grid_size, grid_size)
+    with wandb_figure as fig:
+        for i in range(n_act_dims):
+            ax = fig.add_subplot(gs[i // grid_size, i % grid_size])
+            ax.plot(gt_actions[:, i], c="b", label="action")
+            ax.plot(pred_actions[:, i], c="r", label="pred")
+            ax.set_ylabel(f"dim {i}")
+    return wandb.Image(wandb_figure.image)
+
+
+def eval_on_episodes(data_loader, vla, action_tokenizer, cfg):
+    logs = {}
+    with tqdm.tqdm(total=cfg.eval_episodes, desc="Eval episodes") as progress:
+        for idx, episode in enumerate(data_loader):
+            gt_episode_actions, pred_episode_actions = [], []
+            for step in tqdm.tqdm(episode):
+                step.pop("dataset_names")
+                for k in step.keys():
+                    step[k] = step[k].to(DEVICE)
+                    if k == "pixel_values":
+                        step[k] = step[k].to(dtype=vla.llm_backbone.half_precision_dtype)
+
+                gt_action_tokens, pred_action_tokens = run_on_batch(step, vla, cfg.action_dim)
+                gt_episode_actions.append(
+                    action_tokenizer.decode_token_ids_to_actions(gt_action_tokens.cpu().numpy())
+                )
+                pred_episode_actions.append(
+                    action_tokenizer.decode_token_ids_to_actions(pred_action_tokens.cpu().numpy())
+                )
+
+            logs[f"episode_{idx}"] = plot_action_episodes(
+                np.array(gt_episode_actions),
+                np.array(pred_episode_actions)
+            )
+            progress.update()
+            if idx == cfg.eval_episodes - 1:
+                break
+    return logs
 
 
 @draccus.wrap()
@@ -232,6 +319,14 @@ def visualize_policy(cfg: VisualizeConfig) -> None:
         val_metrics = eval_on_dataset(val_loader, vla, action_tokenizer, cfg)
         wandb.log({"val/": val_metrics}, step=step)
 
+        # Evaluate on episodic data
+        logging.info("Running episode evaluations...")
+        train_episode_loader, _ = make_episode_dataset(cfg, vla, train=True)
+        val_episode_loader, _ = make_episode_dataset(cfg, vla, train=False)
+        train_episode_metrics = eval_on_episodes(train_episode_loader, vla, action_tokenizer, cfg)
+        wandb.log({"train_rollouts/": train_episode_metrics}, step=step)
+        val_episode_metrics = eval_on_episodes(val_episode_loader, vla, action_tokenizer, cfg)
+        wandb.log({"val_rollouts/": val_episode_metrics}, step=step)
 
 if __name__ == "__main__":
     visualize_policy()
