@@ -437,7 +437,7 @@ def make_single_dataset(
 
     # save for later
     dataset.dataset_statistics = dataset_statistics
-    return dataset, dataset_statistics["num_episodes"]
+    return dataset, dataset_statistics["num_trajectories"]
 
 
 # === Core Initializer ===

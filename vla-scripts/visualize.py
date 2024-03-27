@@ -9,6 +9,7 @@ Usage:
         --data_root_dir <BASE_DATASETS_DIR> \
         --pretrained_checkpoint <CHECKPOINT_PATH>
 """
+
 import matplotlib
 
 matplotlib.use("Agg")
@@ -21,14 +22,14 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Union
-from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
-import matplotlib.gridspec as gridspec
-import matplotlib.pyplot as plt
 
 import draccus
+import matplotlib.gridspec as gridspec
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import tqdm
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from torch.utils.data import DataLoader
 
 import wandb
@@ -133,6 +134,7 @@ def make_episode_dataset(cfg, vla, train):
         default_image_resolution=vla.vision_backbone.default_image_resolution,
         shuffle_buffer_size=10000,
         train=train,
+        episodic=True,
     )
     # Create dataloader.
     dataloader = DataLoader(
@@ -263,23 +265,21 @@ def eval_on_episodes(data_loader, vla, action_tokenizer, cfg):
         for idx, episode in enumerate(data_loader):
             gt_episode_actions, pred_episode_actions = [], []
             for step in tqdm.tqdm(episode):
-                step.pop("dataset_names")
+                step.pop("dataset_name")
                 for k in step.keys():
                     step[k] = step[k].to(DEVICE)
                     if k == "pixel_values":
                         step[k] = step[k].to(dtype=vla.llm_backbone.half_precision_dtype)
+                step["attention_mask"] = step["input_ids"].ne(vla.llm_backbone.get_tokenizer().pad_token_id)
 
                 gt_action_tokens, pred_action_tokens = run_on_batch(step, vla, cfg.action_dim)
-                gt_episode_actions.append(
-                    action_tokenizer.decode_token_ids_to_actions(gt_action_tokens.cpu().numpy())
-                )
+                gt_episode_actions.append(action_tokenizer.decode_token_ids_to_actions(gt_action_tokens.cpu().numpy()))
                 pred_episode_actions.append(
                     action_tokenizer.decode_token_ids_to_actions(pred_action_tokens.cpu().numpy())
                 )
 
             logs[f"episode_{idx}"] = plot_action_episodes(
-                np.array(gt_episode_actions),
-                np.array(pred_episode_actions)
+                np.array(gt_episode_actions)[:, 0], np.array(pred_episode_actions)[:, 0]
             )
             progress.update()
             if idx == cfg.eval_episodes - 1:
@@ -321,12 +321,13 @@ def visualize_policy(cfg: VisualizeConfig) -> None:
 
         # Evaluate on episodic data
         logging.info("Running episode evaluations...")
-        train_episode_loader, _ = make_episode_dataset(cfg, vla, train=True)
+        train_episode_loader, action_tokenizer = make_episode_dataset(cfg, vla, train=True)
         val_episode_loader, _ = make_episode_dataset(cfg, vla, train=False)
         train_episode_metrics = eval_on_episodes(train_episode_loader, vla, action_tokenizer, cfg)
         wandb.log({"train_rollouts/": train_episode_metrics}, step=step)
         val_episode_metrics = eval_on_episodes(val_episode_loader, vla, action_tokenizer, cfg)
         wandb.log({"val_rollouts/": val_episode_metrics}, step=step)
+
 
 if __name__ == "__main__":
     visualize_policy()

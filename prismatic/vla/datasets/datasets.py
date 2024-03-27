@@ -7,7 +7,7 @@ format to OpenVLA, IterableDataset shim.
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Tuple, Type
+from typing import Any, Callable, Dict, Tuple, Type
 
 import torch
 from PIL import Image
@@ -62,6 +62,11 @@ class RLDSBatchTransform:
             labels[-1] = IGNORE_INDEX
 
         return dict(pixel_values=pixel_values, input_ids=input_ids, labels=labels, dataset_name=dataset_name)
+
+
+def tree_map(fn: Callable, tree: dict) -> dict:
+    """Maps a function over a nested dictionary."""
+    return {k: tree_map(fn, v) if isinstance(v, dict) else fn(v) for k, v in tree.items()}
 
 
 class RLDSDataset(IterableDataset):
@@ -148,7 +153,11 @@ class RLDSDataset(IterableDataset):
             if not self.episodic:
                 yield self.batch_transform(rlds_batch)
             else:
-                yield [self.batch_transform(step) for step in rlds_batch]
+                out = [
+                    self.batch_transform(tree_map(lambda x: x[i], rlds_batch))  # noqa: B023
+                    for i in range(rlds_batch["action"].shape[0])
+                ]
+                yield out
 
     def __len__(self) -> int:
         return self.dataset_length
