@@ -19,21 +19,21 @@ action = loads(requests.post(
 import json_numpy
 
 json_numpy.patch()
-with True:
-    import logging
-    import traceback
-    from dataclasses import dataclass
-    from pathlib import Path
-    from typing import Any, Dict, Union
 
-    import draccus
-    import uvicorn
-    from fastapi import FastAPI
-    from fastapi.responses import JSONResponse
-    from PIL import Image
+import logging  # noqa: E402
+import traceback  # noqa: E402
+from dataclasses import dataclass  # noqa: E402
+from pathlib import Path  # noqa: E402
+from typing import Any, Dict, Union  # noqa: E402
 
-    from prismatic.models.load import load_vla
-    from prismatic.models.vlms import OpenVLA
+import draccus  # noqa: E402
+import uvicorn  # noqa: E402
+from fastapi import FastAPI  # noqa: E402
+from fastapi.responses import JSONResponse  # noqa: E402
+from PIL import Image  # noqa: E402
+
+from prismatic.models.load import load_vla  # noqa: E402
+from prismatic.models.vlms import OpenVLA  # noqa: E402
 
 
 @dataclass
