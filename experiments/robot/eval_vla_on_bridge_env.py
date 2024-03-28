@@ -139,7 +139,7 @@ def get_vla_action(vla, image, task_label, tokenizer, action_tokenizer):
     prompt_builder = vla.get_prompt_builder()
     prompt_builder.add_turn(role="human", message=f"What action should the robot take to {task_label.lower()}?")
     prompt_text = prompt_builder.get_prompt()
-    generated_text = vla.generate(image, prompt_text, max_new_tokens=ACTION_DIM, do_sample=False)
+    generated_text = vla.generate_with_prompt(image, prompt_text, max_new_tokens=ACTION_DIM, do_sample=False)
     predicted_action_token_ids = torch.unsqueeze(
         torch.Tensor(tokenizer(generated_text)["input_ids"][-ACTION_DIM:]).long(), dim=0
     ).to(DEVICE)

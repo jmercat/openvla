@@ -130,8 +130,8 @@ def eval_teacher_forcing(batch, vla, action_tokenizer):
 def eval_no_teacher_forcing(batch, vla, action_tokenizer):
     """
     Evaluates model on input batch without using teacher forcing.
-    Leverages the model's `generate_super()` function.
-    We use greedy decoding here by passing `do_sample=False` to `generate_super()`.
+    Leverages the model's `generate()` function.
+    We use greedy decoding here by passing `do_sample=False` to `generate()`.
     """
     # Prepare inputs.
     inputs = copy.deepcopy(batch)
@@ -140,15 +140,15 @@ def eval_no_teacher_forcing(batch, vla, action_tokenizer):
     inputs["input_ids"] = inputs["input_ids"][:, : -ACTION_DIM - 1]
     inputs["labels"] = inputs["labels"][:, : -ACTION_DIM - 1]
     inputs["attention_mask"] = inputs["attention_mask"][:, : -ACTION_DIM - 1]
-    # Call `generate_super()` to generate action tokens.
-    generated_ids = vla.generate_super(**inputs, max_new_tokens=ACTION_DIM, do_sample=False)
+    # Call `generate()` to generate action tokens.
+    generated_ids = vla.generate(**inputs, max_new_tokens=ACTION_DIM, do_sample=False)
     predicted_action_token_ids = generated_ids[:, -ACTION_DIM:]
     # Compute action tokens accuracy and L1 loss.
     actions_accuracy, l1_loss = compute_actions_accuracy_l1_loss(
         action_tokenizer,
         ground_truth_action_token_ids,
         predicted_action_token_ids,
-        print_text="No teacher forcing - generate_super():",
+        print_text="No teacher forcing - generate():",
     )
     return actions_accuracy, l1_loss
 
@@ -200,8 +200,9 @@ def eval_no_teacher_forcing_manual_generate(batch, vla, action_tokenizer):
 
 def eval_no_teacher_forcing_prompt_builder(batch, vla, action_tokenizer, tokenizer, image_transform):
     """
-    Evaluates model on input batch without using teacher forcing. Leverages Prismatic prompt builder and `generate()`.
-    We use greedy decoding here by passing `do_sample=False` to `generate()`.
+    Evaluates model on input batch without using teacher forcing.
+    Leverages Prismatic prompt builder and `generate_with_prompt()`.
+    We use greedy decoding here by passing `do_sample=False` to `generate_with_prompt()`.
 
     Pretty hacky because we need to recover the original image from `pixel_values` somehow (via un-normalization).
     """
@@ -234,8 +235,8 @@ def eval_no_teacher_forcing_prompt_builder(batch, vla, action_tokenizer, tokeniz
     )
     prompt_builder.add_turn(role="human", message=message)
     prompt_text = prompt_builder.get_prompt()
-    # Call `generate()` to generate action tokens.
-    generated_text = vla.generate(image, prompt_text, max_new_tokens=ACTION_DIM, do_sample=False)
+    # Call `generate_with_prompt()` to generate action tokens.
+    generated_text = vla.generate_with_prompt(image, prompt_text, max_new_tokens=ACTION_DIM, do_sample=False)
     predicted_action_token_ids = torch.unsqueeze(
         torch.Tensor(tokenizer(generated_text)["input_ids"][-ACTION_DIM:]).long(), dim=0
     ).to(DEVICE)
@@ -263,7 +264,7 @@ def print_results(stats_dict, num_batches):
         if k == "teacher_forcing":
             print("Teacher forcing:")
         elif k == "no_teacher_forcing":
-            print("No teacher forcing - generate_super():")
+            print("No teacher forcing - generate():")
         elif k == "no_teacher_forcing_manual_generate":
             print("No teacher forcing - manual autoregressive generation:")
         else:
@@ -327,7 +328,7 @@ def main(cfg: GenerateConfig) -> None:
         stats_dict["teacher_forcing"]["l1_loss"] += l1_loss
         stats_dict["teacher_forcing"]["actions_accuracy"] += actions_accuracy
         print("-----------------------------------------------------------")
-        # Generate actions without teacher forcing: via `generate_super()`.
+        # Generate actions without teacher forcing: via `generate()`.
         actions_accuracy, l1_loss = eval_no_teacher_forcing(batch, vla, action_tokenizer)
         stats_dict["no_teacher_forcing"]["l1_loss"] += l1_loss
         stats_dict["no_teacher_forcing"]["actions_accuracy"] += actions_accuracy

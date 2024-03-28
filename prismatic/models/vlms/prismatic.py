@@ -1,7 +1,9 @@
 """
 prismatic.py
 
-PyTorch Module defining a PrismaticVLM, our general interface for defining the various different VLMs in our work.
+PyTorch Module defining:
+    - PrismaticVLM, our general interface for defining the various different VLMs in our work.
+    - OpenVLA, a subclass of PrismaticVLM that we use for VLA models.
 
 Notes:
     - For now, we don't subclass `transformers.PretrainedModel` (or CausalLM). Instead, we assume a very limited subset
@@ -570,14 +572,43 @@ class PrismaticVLM(VLM):
 
         return generated_text
 
-    # TODO (MJ): Do we want a standard `generate()` function matching HF-style LLM/VLM `generate()`?
-    #            Consider renaming:
-    #              - `generate()` -> `generate_with_prompt()`
-    #              - `generate_super()` -> `generate()`
+
+class OpenVLA(PrismaticVLM):
+    """
+    General VLA model interface. Mainly used to avoid breaking PrismaticVLM's existing function signatures.
+
+    Maps a few functions to superclass functions and exposes them for VLA model inference:
+        OpenVLA.generate_with_prompt() -> PrismaticVLM.generate()
+        OpenVLA.generate() -> GenerationMixin.generate() (the standard generate() function in HF Transformers models)
+    """
+
+    def __init__(
+        self,
+        model_id: str,
+        vision_backbone: VisionBackbone,
+        llm_backbone: LLMBackbone,
+        enable_mixed_precision_training: bool = True,
+        arch_specifier: str = "gelu-mlp",
+    ) -> None:
+        super().__init__(
+            model_id,
+            vision_backbone,
+            llm_backbone,
+            enable_mixed_precision_training,
+            arch_specifier,
+        )
+
     @torch.inference_mode()
-    def generate_super(
+    def generate_with_prompt(self, image: Image, prompt_text: str, **kwargs: str) -> str:
+        """Calls PrismaticVLM.generate()."""
+        generated_text = super().generate(image, prompt_text, **kwargs)
+        return generated_text
+
+    @torch.inference_mode()
+    def generate(
         self,
         **kwargs,
     ) -> str:
-        generated_ids = super().generate(**kwargs)
+        """Calls GenerationMixin.generate()."""
+        generated_ids = super(PrismaticVLM, self).generate(**kwargs)
         return generated_ids

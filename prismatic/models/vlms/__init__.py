@@ -1,1 +1,1 @@
-from .prismatic import PrismaticVLM
+from .prismatic import OpenVLA, PrismaticVLM

@@ -15,7 +15,7 @@ from huggingface_hub import hf_hub_download
 from prismatic.conf import ModelConfig
 from prismatic.models.materialize import get_llm_backbone_and_tokenizer, get_vision_backbone_and_transform
 from prismatic.models.registry import GLOBAL_REGISTRY, MODEL_REGISTRY
-from prismatic.models.vlms import PrismaticVLM
+from prismatic.models.vlms import OpenVLA, PrismaticVLM
 from prismatic.overwatch import initialize_overwatch
 
 # Initialize Overwatch =>> Wraps `logging.Logger`
@@ -121,14 +121,14 @@ def load_vla(
     hf_token: Optional[str] = None,
     cache_dir: Optional[Union[str, Path]] = None,
     load_for_training: bool = False,
-) -> PrismaticVLM:
+) -> OpenVLA:
     """Loads a pretrained VLA model directly from checkpoint path."""
     overwatch.info(f"Loading from local checkpoint path `{model_path}`")
 
     # Assert that the checkpoint path looks like: `..../<RUN_ID>/checkpoints/<CHECKPOINT_DIR>`
     assert os.path.isfile(model_path)
-    assert model_path[-3:] == ".pt" and model_path.split('/')[-2] == "checkpoints" and len(model_path.split('/')) >= 3
-    run_dir = Path('/'.join(model_path.split('/')[:-2])) # `..../<RUN_ID>`
+    assert model_path[-3:] == ".pt" and model_path.split("/")[-2] == "checkpoints" and len(model_path.split("/")) >= 3
+    run_dir = Path("/".join(model_path.split("/")[:-2]))  # `..../<RUN_ID>`
 
     # Get paths for `config.json` and pretrained checkpoint
     config_json, checkpoint_pt = run_dir / "config.json", model_path
@@ -139,7 +139,7 @@ def load_vla(
         vla_cfg = json.load(f)["vla"]
         model_cfg = ModelConfig.get_choice_class(vla_cfg["base_vlm"])()
 
-    # = Load Individual Components necessary for Instantiating a VLM =
+    # = Load Individual Components necessary for Instantiating a VLA =
     #   =>> Print Minimal Config
     overwatch.info(
         f"Found Config =>> Loading & Freezing [bold blue]{model_cfg.model_id}[/] with:\n"
@@ -165,9 +165,9 @@ def load_vla(
         inference_mode=not load_for_training,
     )
 
-    # Load VLM using `from_pretrained` (clobbers HF syntax... eventually should reconcile)
-    overwatch.info(f"Loading VLM [bold blue]{model_cfg.model_id}[/] from Checkpoint")
-    vlm = PrismaticVLM.from_pretrained(
+    # Load VLA using `from_pretrained` (clobbers HF syntax... eventually should reconcile)
+    overwatch.info(f"Loading VLA [bold blue]{model_cfg.model_id}[/] from Checkpoint")
+    vla = OpenVLA.from_pretrained(
         checkpoint_pt,
         model_cfg.model_id,
         vision_backbone,
@@ -176,4 +176,4 @@ def load_vla(
         freeze_weights=not load_for_training,
     )
 
-    return vlm
+    return vla
