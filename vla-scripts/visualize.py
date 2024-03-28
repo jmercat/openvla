@@ -116,7 +116,7 @@ def make_data_loader(cfg, vla, train):
     # Create dataloader.
     dataloader = DataLoader(
         vla_dataset,
-        batch_size=1,       # currently only support generate() with batch size 1
+        batch_size=1,  # currently only support generate() with batch size 1
         collate_fn=collator,
         num_workers=0,
         shuffle=False,
@@ -265,7 +265,7 @@ def eval_on_episodes(data_loader, vla, action_tokenizer, cfg):
     with tqdm.tqdm(total=cfg.eval_episodes, desc="Eval episodes") as progress:
         for idx, episode in enumerate(data_loader):
             gt_episode_actions, pred_episode_actions = [], []
-            for step in tqdm.tqdm(episode[:cfg.max_episode_steps]):
+            for step in tqdm.tqdm(episode[: cfg.max_episode_steps]):
                 step.pop("dataset_name")
                 for k in step.keys():
                     step[k] = step[k].to(DEVICE)
