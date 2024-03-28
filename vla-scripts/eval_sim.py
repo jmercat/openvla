@@ -15,12 +15,12 @@ import numpy as np
 import real2sim
 import torch
 import tqdm
+import wandb
 from accelerate.utils import set_seed
 from PIL import Image
 from real2sim.utils.env.observation_utils import get_image_from_maniskill2_obs_dict
 from transforms3d.euler import euler2axangle
 
-import wandb
 from prismatic.conf import ModelConfig, ModelRegistry
 from prismatic.models import load_vla
 from prismatic.models.materialize import VISION_BACKBONES

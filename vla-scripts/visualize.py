@@ -29,13 +29,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import tqdm
+import wandb
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from torch.utils.data import DataLoader
 
-import wandb
 from prismatic.conf import VLAConfig, VLARegistry
 from prismatic.models import load_vla
-from prismatic.models.vlms import PrismaticVLM, OpenVLA
+from prismatic.models.vlms import OpenVLA, PrismaticVLM
 from prismatic.vla import get_vla_dataset_and_collator
 
 DEVICE = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
@@ -187,9 +187,7 @@ def run_on_batch(batch, vla, action_dim):
     inputs["attention_mask"] = inputs["attention_mask"][:, : -action_dim - 1]
 
     # Call `super().generate()` to generate action tokens w/o teacher forcing.
-    generated_ids = super(PrismaticVLM, vla).generate(
-        **inputs, max_new_tokens=action_dim, do_sample=False
-    )
+    generated_ids = super(PrismaticVLM, vla).generate(**inputs, max_new_tokens=action_dim, do_sample=False)
     predicted_action_token_ids = generated_ids[:, -action_dim:]
     return ground_truth_action_token_ids, predicted_action_token_ids
 

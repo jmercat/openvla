@@ -7,8 +7,8 @@ import torch
 from PIL import Image
 
 from prismatic.models.vlms.prismatic import PrismaticVLM
-from prismatic.vla.action_tokenizer import ActionTokenizer
 from prismatic.overwatch import initialize_overwatch
+from prismatic.vla.action_tokenizer import ActionTokenizer
 
 # Initialize Overwatch =>> Wraps `logging.Logger`
 overwatch = initialize_overwatch(__name__)
@@ -26,6 +26,7 @@ class OpenVLA(PrismaticVLM):
         )       # predicts unnormalized, continuous action
 
     """
+
     def __init__(
         self,
         action_norm_stats: Dict[str, Dict[str, List[float]]],
@@ -44,10 +45,7 @@ class OpenVLA(PrismaticVLM):
 
         # Build VLA prompt
         prompt_builder = self.get_prompt_builder()
-        prompt_builder.add_turn(
-            role="human",
-            message=f"What action should the robot take to {instruction.lower()}?"
-        )
+        prompt_builder.add_turn(role="human", message=f"What action should the robot take to {instruction.lower()}?")
         prompt_text = prompt_builder.get_prompt()
 
         # Prepare Inputs
@@ -56,12 +54,7 @@ class OpenVLA(PrismaticVLM):
         # TODO (karl): figure out how to make this tokenizer-independent
         # Note (Moo Jin): We need to add this special empty token ('') after the colon (':') token in "ASSISTANT:"
         # in order for the predictions to match the training configuration and be accurate.
-        input_ids = torch.cat(
-            (
-                input_ids,
-                torch.unsqueeze(torch.Tensor([29871]).long(), dim=0).to(self.device)
-            ), dim=1
-        )
+        input_ids = torch.cat((input_ids, torch.unsqueeze(torch.Tensor([29871]).long(), dim=0).to(self.device)), dim=1)
 
         pixel_values = image_transform(image)
         if isinstance(pixel_values, torch.Tensor):
@@ -83,15 +76,11 @@ class OpenVLA(PrismaticVLM):
             # fmt: on
 
         # Extract predicted action tokens and translate into (normalized) continuous actions
-        predicted_action_token_ids = generated_ids[:, -self.action_dim:]
-        normalized_actions = self.action_tokenizer.decode_token_ids_to_actions(
-            predicted_action_token_ids.cpu().numpy()
-        )
+        predicted_action_token_ids = generated_ids[:, -self.action_dim :]
+        normalized_actions = self.action_tokenizer.decode_token_ids_to_actions(predicted_action_token_ids.cpu().numpy())
 
         # Unnormalize actions
-        mask = self.action_norm_stats.get(
-            "mask", np.ones_like(self.action_norm_stats["mean"], dtype=bool)
-        )
+        mask = self.action_norm_stats.get("mask", np.ones_like(self.action_norm_stats["mean"], dtype=bool))
         action_high, action_low = np.array(self.action_norm_stats["q99"]), np.array(self.action_norm_stats["q01"])
         actions = np.where(
             mask,

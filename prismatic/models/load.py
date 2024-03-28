@@ -15,8 +15,7 @@ from huggingface_hub import hf_hub_download
 from prismatic.conf import ModelConfig
 from prismatic.models.materialize import get_llm_backbone_and_tokenizer, get_vision_backbone_and_transform
 from prismatic.models.registry import GLOBAL_REGISTRY, MODEL_REGISTRY
-from prismatic.models.vlms import PrismaticVLM
-from prismatic.models.vlms import OpenVLA
+from prismatic.models.vlms import OpenVLA, PrismaticVLM
 from prismatic.overwatch import initialize_overwatch
 from prismatic.vla.action_tokenizer import ActionTokenizer
 
@@ -129,8 +128,8 @@ def load_vla(
 
     # Assert that the checkpoint path looks like: `..../<RUN_ID>/checkpoints/<CHECKPOINT_DIR>`
     assert os.path.isfile(model_path)
-    assert model_path[-3:] == ".pt" and model_path.split('/')[-2] == "checkpoints" and len(model_path.split('/')) >= 3
-    run_dir = Path('/'.join(model_path.split('/')[:-2])) # `..../<RUN_ID>`
+    assert model_path[-3:] == ".pt" and model_path.split("/")[-2] == "checkpoints" and len(model_path.split("/")) >= 3
+    run_dir = Path("/".join(model_path.split("/")[:-2]))  # `..../<RUN_ID>`
 
     # Get paths for `config.json`, 'dataset_statistics.json' and pretrained checkpoint
     config_json = run_dir / "config.json"

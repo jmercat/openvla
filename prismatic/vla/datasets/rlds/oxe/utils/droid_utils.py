@@ -1,4 +1,5 @@
 """Episode transforms for DROID dataset."""
+
 from typing import Any, Dict
 
 import tensorflow as tf
@@ -39,11 +40,7 @@ def change_velocity_act_frame(velocity, frame):
 
 
 def rand_swap_exterior_images(img1, img2):
-    return tf.cond(
-        tf.random.uniform(shape=[]) > 0.5,
-        lambda: (img1, img2),
-        lambda: (img2, img1)
-    )
+    return tf.cond(tf.random.uniform(shape=[]) > 0.5, lambda: (img1, img2), lambda: (img2, img1))
 
 
 def droid_baseact_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
@@ -77,8 +74,7 @@ def droid_baseact_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
 def droid_wristact_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
     # every input feature is batched, ie has leading batch dimension
     wrist_act = change_velocity_act_frame(
-        trajectory["action_dict"]["cartesian_velocity"],
-        trajectory["observation"]["cartesian_position"]
+        trajectory["action_dict"]["cartesian_velocity"], trajectory["observation"]["cartesian_position"]
     )
     trajectory["action"] = tf.concat(
         (

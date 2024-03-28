@@ -19,13 +19,13 @@ from typing import Any, Dict
 
 import tensorflow as tf
 
+from prismatic.vla.datasets.rlds.oxe.utils.droid_utils import droid_baseact_transform
 from prismatic.vla.datasets.rlds.utils.data_utils import (
     binarize_gripper_actions,
     invert_gripper_actions,
     rel2abs_gripper_actions,
     relabel_bridge_actions,
 )
-from prismatic.vla.datasets.rlds.oxe.utils.droid_utils import droid_wristact_transform, droid_baseact_transform
 
 
 def bridge_oxe_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
