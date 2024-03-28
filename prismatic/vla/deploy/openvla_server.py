@@ -1,0 +1,99 @@
+# On action server: pip install uvicorn fastapi json-numpy
+# On client: pip install requests json-numpy
+
+"""
+On client:
+
+import requests
+import json_numpy
+from json_numpy import loads
+json_numpy.patch()
+
+action = loads(requests.post(
+                urllib.parse.urljoin(self.url, endpoint),
+                json={"image": image, "instruction": instruction},
+            ).json())
+"""
+
+
+import json_numpy
+
+json_numpy.patch()
+with True:
+    import logging
+    import traceback
+    from dataclasses import dataclass
+    from pathlib import Path
+    from typing import Any, Dict, Union
+
+    import draccus
+    import uvicorn
+    from fastapi import FastAPI
+    from fastapi.responses import JSONResponse
+    from PIL import Image
+
+    from prismatic.models.load import load_vla
+    from prismatic.models.vlms import OpenVLA
+
+
+@dataclass
+class VLAServerConfig:
+    # fmt: off
+    # Pre-trained VLA model checkpoint to serve
+    checkpoint_path: Union[str, Path] = Path(
+        "/shared/karl/models/open_vla/lr-2e5+siglip-224px+mx-bridge+n1+b32+x7/step-080000-epoch-09-loss=0.0987.pt"
+    )
+
+    # Server configuration
+    host: str = "0.0.0.0"
+    port: int = 8000
+
+    # HF Hub Credentials (for LLaMa-2)
+    hf_token: Union[str, Path] = Path(".hf_token")  # Environment variable or Path to HF Token
+    # fmt: on
+
+
+def json_response(obj):
+    return JSONResponse(json_numpy.dumps(obj))
+
+
+class OpenVLAServer:
+    """A simple server for OpenVLA policies.
+
+    Use /act to predict an action for a given image + instruction.
+        - Takes in {'image': np.ndarray, 'instruction': str}
+        - Returns {'action': np.ndarray}
+    """
+
+    def __init__(self, checkpoint_path, hf_token=None):
+        self.vla: OpenVLA = load_vla(checkpoint_path, hf_token=hf_token)
+
+    def run(self, host="0.0.0.0", port=8000):
+        self.app = FastAPI()
+        self.app.post("/act")(self.predict_action)
+        uvicorn.run(self.app, host=host, port=port)
+
+    def predict_action(self, payload: Dict[Any, Any]):
+        try:
+            image = payload["image"]
+            instruction = payload["instruction"]
+            action = self.vla.predict_action(Image.fromarray(image).convert("RGB"), instruction)
+            return JSONResponse(action)
+        except:  # noqa: E722        # blanket except to robustify against external errors
+            logging.error(traceback.format_exc())
+            logging.warning(
+                "Your request threw an error. "
+                "Make sure your request complies with the expected format: \n"
+                "{'image': np.ndarray, 'instruction': str}"
+            )
+            return "error"
+
+
+@draccus.wrap()
+def run_vla_server(cfg: VLAServerConfig):
+    server = OpenVLAServer(cfg.checkpoint_path, cfg.hf_token)
+    server.run(cfg.host, cfg.port)
+
+
+if __name__ == "__main__":
+    run_vla_server()
