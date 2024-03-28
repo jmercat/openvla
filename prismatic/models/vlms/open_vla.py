@@ -29,9 +29,9 @@ class OpenVLA(PrismaticVLM):
 
     def __init__(
         self,
+        *args,
         action_norm_stats: Dict[str, Dict[str, List[float]]],
         action_tokenizer: ActionTokenizer,
-        *args,
         **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
