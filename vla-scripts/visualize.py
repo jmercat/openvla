@@ -58,9 +58,9 @@ class VisualizeConfig:
     data_root_dir: str = "/shared/karl/data"
 
     # Eval params
-    eval_batch_size: int = 1                                    # Currently only support batch size 1 inference
-    eval_batches: int = 1024
-    eval_episodes: int = 5
+    eval_samples: int = 1024                                    # Number of samples used for computing eval stats
+    eval_episodes: int = 5                                      # Number of episodes visualized in episode vis
+    max_episode_steps: int = 80                                 # Max steps visualized in episode visualizations
 
     # Model params
     action_dim: int = 7
@@ -116,7 +116,7 @@ def make_data_loader(cfg, vla, train):
     # Create dataloader.
     dataloader = DataLoader(
         vla_dataset,
-        batch_size=cfg.eval_batch_size,
+        batch_size=1,       # currently only support generate() with batch size 1
         collate_fn=collator,
         num_workers=0,
         shuffle=False,
@@ -194,7 +194,7 @@ def run_on_batch(batch, vla, action_dim):
 
 def eval_on_dataset(data_loader, vla, action_tokenizer, cfg):
     metrics = None
-    with tqdm.tqdm(total=cfg.eval_batches, desc="Eval steps") as progress:
+    with tqdm.tqdm(total=cfg.eval_samples, desc="Eval steps") as progress:
         for idx, batch in enumerate(data_loader):
             # Prepare inputs and move them to device
             batch.pop("dataset_names")
@@ -217,7 +217,7 @@ def eval_on_dataset(data_loader, vla, action_tokenizer, cfg):
                     metrics[k] = np.concatenate((metrics[k], batch_metrics[k]))
 
             progress.update()
-            if idx == cfg.eval_batches - 1:
+            if idx == cfg.eval_samples - 1:
                 break
 
     # compute averages globally and per dimension
@@ -265,7 +265,7 @@ def eval_on_episodes(data_loader, vla, action_tokenizer, cfg):
     with tqdm.tqdm(total=cfg.eval_episodes, desc="Eval episodes") as progress:
         for idx, episode in enumerate(data_loader):
             gt_episode_actions, pred_episode_actions = [], []
-            for step in tqdm.tqdm(episode):
+            for step in tqdm.tqdm(episode[:cfg.max_episode_steps]):
                 step.pop("dataset_name")
                 for k in step.keys():
                     step[k] = step[k].to(DEVICE)
