@@ -19,6 +19,7 @@ from prismatic.models.backbones.vision import ImageTransform
 from prismatic.vla.action_tokenizer import ActionTokenizer
 from prismatic.vla.datasets.rlds import make_interleaved_dataset, make_single_dataset
 from prismatic.vla.datasets.rlds.oxe import OXE_NAMED_MIXTURES, get_oxe_dataset_kwargs_and_weights
+from prismatic.vla.datasets.rlds.utils.data_utils import NormalizationType
 
 # HuggingFace Default / LLaMa-2 IGNORE_INDEX (for labels)
 IGNORE_INDEX = -100
@@ -99,7 +100,7 @@ class RLDSDataset(IterableDataset):
             load_depth=False,
             load_proprio=False,
             load_language=True,
-            action_proprio_normalization_type="bounds_q99",
+            action_proprio_normalization_type=NormalizationType.BOUNDS_Q99,
         )
         rlds_config = dict(
             traj_transform_kwargs=dict(

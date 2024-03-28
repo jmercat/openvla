@@ -43,6 +43,7 @@ class PrismaticVLM(VLM):
         llm_backbone: LLMBackbone,
         enable_mixed_precision_training: bool = True,
         arch_specifier: str = "gelu-mlp",
+        **kwargs,
     ) -> None:
         super().__init__(
             "prismatic",
@@ -91,6 +92,7 @@ class PrismaticVLM(VLM):
         enable_mixed_precision_training: bool = True,
         arch_specifier: str = "gelu-mlp",
         freeze_weights: bool = True,
+        **kwargs,
     ) -> PrismaticVLM:
         """Initialize a PrismaticVLM from a pretrained checkpoint, freezing all weights, tailored for inference."""
         vlm = cls(
@@ -99,6 +101,7 @@ class PrismaticVLM(VLM):
             llm_backbone,
             enable_mixed_precision_training=enable_mixed_precision_training,
             arch_specifier=arch_specifier,
+            **kwargs,
         )
 
         # Load from Checkpoint (Custom --> should load both *projector* and *llm* weights)
@@ -536,17 +539,12 @@ class PrismaticVLM(VLM):
         return gen_texts if return_string_probabilities is None else gen_probabilities
 
     @torch.inference_mode()
-    def generate_with_prompt(self, image: Image, prompt_text: str, **kwargs: str) -> str:
+    def generate(self, image: Image, prompt_text: str, **kwargs: str) -> str:
         # For now, only support generation with a batch size of 1 for simplicity
         image_transform, tokenizer = self.vision_backbone.image_transform, self.llm_backbone.tokenizer
 
         # Prepare Inputs
         input_ids = tokenizer(prompt_text, truncation=True, return_tensors="pt").input_ids.to(self.device)
-        # Note (Moo Jin): We need to add this special empty token ('') after the colon (':') token in "ASSISTANT:"
-        # in order for the predictions to match the training configuration and be accurate.
-        input_ids = torch.cat((input_ids, torch.unsqueeze(torch.Tensor([29871]).long(), dim=0).to(self.device)), 1).to(
-            self.device
-        )
         pixel_values = image_transform(image)
         if isinstance(pixel_values, torch.Tensor):
             pixel_values = pixel_values[None, ...].to(self.device)
@@ -569,11 +567,3 @@ class PrismaticVLM(VLM):
         generated_text = tokenizer.decode(generated_ids[0, input_ids.shape[1] :], skip_special_tokens=True).strip()
 
         return generated_text
-
-    @torch.inference_mode()
-    def generate(
-            self,
-            **kwargs,
-    ) -> str:
-        generated_ids = super().generate(**kwargs)
-        return generated_ids

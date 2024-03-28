@@ -4,7 +4,6 @@ eval_vla_on_real2sim_env.py
 Runs a VLA checkpoint in a real-to-sim environment.
 """
 
-import json
 import os
 import time
 from dataclasses import dataclass, field
@@ -25,7 +24,7 @@ import wandb
 from prismatic.conf import ModelConfig, ModelRegistry
 from prismatic.models import load_vla
 from prismatic.models.materialize import VISION_BACKBONES
-from prismatic.vla.action_tokenizer import ActionTokenizer
+from prismatic.models.vlms import OpenVLA
 
 assert "MS2_ASSET_DIR" in os.environ, (
     "Environment variable MS2_ASSET_DIR not set. "
@@ -34,7 +33,6 @@ assert "MS2_ASSET_DIR" in os.environ, (
 
 NUM_EPISODES = 5
 MAX_STEPS = 100  # TODO: retrieve this from env
-ACTION_DIM = 7
 np.set_printoptions(formatter={"float": lambda x: "{0:0.2f}".format(x)})
 TIME = time.strftime("%Y_%m_%d-%H_%M_%S")
 
@@ -44,82 +42,20 @@ def get_image_resize_size(vision_backbone_id: str) -> Tuple[int, int]:
     return VISION_BACKBONES[vision_backbone_id]["kwargs"]["default_image_size"]
 
 
-def get_vla_action(vlm, image, task_description, tokenizer, action_tokenizer, device):
-    assert image.size[0] == image.size[1]
-    prompt_builder = vlm.get_prompt_builder()
-    prompt_builder.add_turn(role="human", message=f"What action should the robot take to {task_description.lower()}?")
-    prompt_text = prompt_builder.get_prompt()
-    generated_text = vlm.generate_with_prompt(image, prompt_text, max_new_tokens=ACTION_DIM, do_sample=False)
-    predicted_action_token_ids = torch.unsqueeze(
-        torch.Tensor(tokenizer(generated_text)["input_ids"][-ACTION_DIM:]).long(), dim=0
-    ).to(device)
-    normalized_action = action_tokenizer.decode_token_ids_to_actions(predicted_action_token_ids.cpu().numpy())[0]
-    return normalized_action
-
-
-def get_action_norm_metadata(dataset_statistics_path):
-    with open(dataset_statistics_path, "r") as f:
-        metadata = json.load(f)
-    return metadata
-
-
-def unnormalize_action(action, metadata, skip_gripper_action=True):
-    """Un-normalizes action to be in the original dataset scale.
-    Loads in a file containing action stats (min, max, std, etc.) and uses those to
-    scale the actions.
-
-    Normalization formula: y = 2 * (x - orig_low) / (orig_high - orig_low) - 1
-
-    To un-normalize, we solve for x:
-        x = 0.5 * (y + 1) * (orig_high - orig_low) + orig_low
-
-    action: numpy array, shape=(7,), dtype=np.float32
+def convert_maniskill(action):
     """
-    action_low = np.array(metadata["action"]["q01"])
-    action_high = np.array(metadata["action"]["q99"])
-    if skip_gripper_action:
-        out = action
-        if len(action.shape) == 1:
-            out[:-1] = 0.5 * (action[:-1] + 1) * (action_high[:-1] - action_low[:-1]) + action_low[:-1]
-
-            roll, pitch, yaw = action[3], action[4], action[5]
-            action_rotation_ax, action_rotation_angle = euler2axangle(roll, pitch, yaw)
-            out[3:6] = action_rotation_ax * action_rotation_angle
-        else:
-            out[:, :-1] = 0.5 * (action[:, :-1] + 1) * (action_high[:-1] - action_low[:-1]) + action_low[:-1]
-            for i in len(out):
-                roll, pitch, yaw = action[i, 3], action[i, 4], action[i, 5]
-                action_rotation_ax, action_rotation_angle = euler2axangle(roll, pitch, yaw)
-                out[i, 3:6] = action_rotation_ax * action_rotation_angle
-
-    else:
-        out = 0.5 * (action + 1) * (action_high - action_low) + action_low
-
-    # convert rotation to axis angle and map gripper range
-    if len(out.shape) == 1:
-        roll, pitch, yaw = out[3], out[4], out[5]
-        action_rotation_ax, action_rotation_angle = euler2axangle(roll, pitch, yaw)
-        out[3:6] = action_rotation_ax * action_rotation_angle
-        out[-1] = 2 * out[-1] - 1
-    else:
-        for i in len(out):
-            roll, pitch, yaw = out[i, 3], out[i, 4], out[i, 5]
-            action_rotation_ax, action_rotation_angle = euler2axangle(roll, pitch, yaw)
-            out[i, 3:6] = action_rotation_ax * action_rotation_angle
-            out[i, -1] = 2 * out[i, -1] - 1
-    return out
-
-
-def normalize_gripper_action(action):
-    """
+    Applies transforms to raw VLA action that Maniskill Real2sim env expects.
+    Converts rotation to axis_angle.
     Changes gripper action (last dimension of action vector) from [0,1] to [-1,+1] and binarizes.
-    This is necessary because the dataset wrapper standardizes gripper actions to [0,1].
-    Note that unlike the other action dimensions, the gripper action is not normalized to [-1,+1]
-    by default by the dataset wrapper.
-
-    Normalization formula: y = 2.0 * (x > 0.5) - 1.0
     """
-    # To implement, just binarize and normalize the last action to [-1,+1].
+    assert action.shape[0] == 7
+
+    # Change rotation to axis-angle
+    roll, pitch, yaw = action[3], action[4], action[5]
+    action_rotation_ax, action_rotation_angle = euler2axangle(roll, pitch, yaw)
+    action[3:6] = action_rotation_ax * action_rotation_angle
+
+    # Binarize final gripper dimension & map to [-1...1]
     action[-1] = 2.0 * (action[-1] > 0.5) - 1.0
     return action
 
@@ -165,13 +101,6 @@ def eval_policy(cfg: GenerateConfig) -> None:
     # initialize logging
     wandb.init(project="openvla", name=f"EVAL_{cfg.model.model_id}_{cfg.env_name}_{TIME}", entity="clvr")
 
-    # Get action unnormalization stats.
-    dataset_statistics_path = (
-        "/shared/karl/models/open_vla/lr-2e5+siglip-224px+mx-bridge+n1+b32+x7/"
-        "dataset_statistics_6660f1fd7de2514abf18365431cdbe7edf09f55ed235830a649d7a45f6ffc3a4.json"
-    )
-    metadata = get_action_norm_metadata(dataset_statistics_path)
-
     print(f"[*] Initializing Generation Playground with `{cfg.model_family}`")
     hf_token = cfg.hf_token.read_text().strip() if isinstance(cfg.hf_token, Path) else os.environ[cfg.hf_token]
     device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
@@ -180,23 +109,15 @@ def eval_policy(cfg: GenerateConfig) -> None:
     # Load Base VLM from checkpoint path
     #   =>> Note :: Verifies that all parameters are loaded in FP32 on load!
     print(f"Loading VLM from checkpoint: {cfg.pretrained_checkpoint}")
-    vlm = load_vla(cfg.pretrained_checkpoint, hf_token=hf_token, load_for_training=False)
-    for param in vlm.parameters():
-        assert param.dtype == torch.float32, f"Loaded VLM parameter not in full precision: {param}"
+    vla: OpenVLA = load_vla(cfg.pretrained_checkpoint, hf_token=hf_token, load_for_training=False)
+    for param in vla.parameters():
+        assert param.dtype == torch.float32, f"Loaded VLA parameter not in full precision: {param}"
 
     # Cast to half precision.
-    vlm.vision_backbone.to(dtype=vlm.vision_backbone.half_precision_dtype)
-    vlm.llm_backbone.to(dtype=vlm.llm_backbone.half_precision_dtype)
-    vlm.to(dtype=vlm.llm_backbone.half_precision_dtype)
-    vlm.to(device)
-
-    # Create action tokenizer.
-    tokenizer = vlm.llm_backbone.get_tokenizer()
-    action_tokenizer = ActionTokenizer(tokenizer)
-
-    # import tensorflow_datasets as tfds
-    # ds = tfds.load("bridge_dataset", data_dir="gs://rail-orca-central2/resize_256_256", split="train")
-    # ep_it = iter(ds)
+    vla.vision_backbone.to(dtype=vla.vision_backbone.half_precision_dtype)
+    vla.llm_backbone.to(dtype=vla.llm_backbone.half_precision_dtype)
+    vla.to(dtype=vla.llm_backbone.half_precision_dtype)
+    vla.to(device)
 
     # Start evaluation.
     num_episodes = 0
@@ -206,8 +127,6 @@ def eval_policy(cfg: GenerateConfig) -> None:
     for j in range(NUM_EPISODES):
         # Reset environment.
         obs, reset_info = env.reset()
-        # ep = next(ep_it)
-        # step_it = iter(ep["steps"])
         # Setup.
         t = 0
         instruction = env.get_language_instruction()
@@ -220,10 +139,6 @@ def eval_policy(cfg: GenerateConfig) -> None:
                 try:
                     t += 1
                     image = get_image_from_maniskill2_obs_dict(env, obs)
-
-                    # step = next(step_it)
-                    # image = step["observation"]["image_0"].numpy()
-
                     image = Image.fromarray(image)
 
                     # Preprocess the image the exact same way that the Berkeley Bridge folks did it
@@ -241,12 +156,8 @@ def eval_policy(cfg: GenerateConfig) -> None:
                     )  # also resize to size seen at train time
                     image = image.convert("RGB")
                     rollout_images.append(np.array(image))
-                    normalized_action = get_vla_action(vlm, image, instruction, tokenizer, action_tokenizer, device)
-                    action = unnormalize_action(normalized_action, metadata, skip_gripper_action=False)
-                    print(action)
-                    # action = normalize_gripper_action(
-                    #    action
-                    # )  # gripper action: [0,1] -> [-1,+1] (because the env expects the latter) # TODO
+                    action = vla.predict_action(image, instruction)
+                    action = convert_maniskill(action)
                     obs, reward, done, truncated, info = env.step(action)
                     if done:
                         num_successes += 1

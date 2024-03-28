@@ -35,6 +35,7 @@ from torch.utils.data import DataLoader
 import wandb
 from prismatic.conf import VLAConfig, VLARegistry
 from prismatic.models import load_vla
+from prismatic.models.vlms import PrismaticVLM, OpenVLA
 from prismatic.vla import get_vla_dataset_and_collator
 
 DEVICE = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
@@ -88,7 +89,7 @@ def get_vla(checkpoint_path, cfg):
     """Loads and returns a VLA model from checkpoint."""
     logging.info(f"Loading VLA from checkpoint: {checkpoint_path}")
     hf_token = cfg.hf_token.read_text().strip() if isinstance(cfg.hf_token, Path) else os.environ[cfg.hf_token]
-    vla = load_vla(checkpoint_path, hf_token=hf_token, load_for_training=False)
+    vla: OpenVLA = load_vla(checkpoint_path, hf_token=hf_token, load_for_training=False)
     for param in vla.parameters():
         assert param.dtype == torch.float32, f"Loaded VLA parameter not in full precision: {param}"
 
@@ -185,8 +186,10 @@ def run_on_batch(batch, vla, action_dim):
     inputs["labels"] = inputs["labels"][:, : -action_dim - 1]
     inputs["attention_mask"] = inputs["attention_mask"][:, : -action_dim - 1]
 
-    # Call `generate()` to generate action tokens.
-    generated_ids = vla.generate(**inputs, max_new_tokens=action_dim, do_sample=False)
+    # Call `super().generate()` to generate action tokens w/o teacher forcing.
+    generated_ids = super(PrismaticVLM, vla).generate(
+        **inputs, max_new_tokens=action_dim, do_sample=False
+    )
     predicted_action_token_ids = generated_ids[:, -action_dim:]
     return ground_truth_action_token_ids, predicted_action_token_ids
 
