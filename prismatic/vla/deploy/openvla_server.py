@@ -42,7 +42,8 @@ class VLAServerConfig:
     # fmt: off
     # Pre-trained VLA model checkpoint to serve
     checkpoint_path: Union[str, Path] = Path(
-        "/shared/karl/models/open_vla/lr-2e5+siglip-224px+mx-bridge+n1+b32+x7/step-080000-epoch-09-loss=0.0987.pt"
+        "/shared/karl/models/open_vla/lr-2e5+siglip-224px+mx-bridge+n1+b32+x7/"
+        "checkpoints/step-080000-epoch-09-loss=0.0987.pt"
     )
 
     # Server configuration

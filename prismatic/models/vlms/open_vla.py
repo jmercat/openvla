@@ -5,6 +5,7 @@ from typing import Dict, List
 import numpy as np
 import torch
 from PIL import Image
+from transformers import LlamaTokenizerFast
 
 from prismatic.models.vlms.prismatic import PrismaticVLM
 from prismatic.overwatch import initialize_overwatch
@@ -51,10 +52,15 @@ class OpenVLA(PrismaticVLM):
         # Prepare Inputs
         input_ids = tokenizer(prompt_text, truncation=True, return_tensors="pt").input_ids.to(self.device)
 
-        # TODO (karl): figure out how to make this tokenizer-independent
-        # Note (Moo Jin): We need to add this special empty token ('') after the colon (':') token in "ASSISTANT:"
-        # in order for the predictions to match the training configuration and be accurate.
-        input_ids = torch.cat((input_ids, torch.unsqueeze(torch.Tensor([29871]).long(), dim=0).to(self.device)), dim=1)
+        if isinstance(tokenizer, LlamaTokenizerFast):
+            # Note (Moo Jin): We need to add this special empty token ('') after the colon (':') token in "ASSISTANT:"
+            # in order for the predictions to match the training configuration and be accurate.
+            input_ids = torch.cat(
+                (input_ids, torch.unsqueeze(torch.Tensor([29871]).long(), dim=0).to(self.device)), dim=1
+            )
+        else:
+            # TODO (Moo Jin): figure out how to make this tokenizer-independent
+            raise ValueError(f"Unsupported `tokenizer` type = {type(tokenizer)}")
 
         pixel_values = image_transform(image)
         if isinstance(pixel_values, torch.Tensor):
