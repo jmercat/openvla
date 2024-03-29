@@ -20,7 +20,6 @@ from typing import Callable, Dict, List, Optional, Type, Union
 import torch
 from PIL import Image
 from torch.distributed.fsdp.wrap import _module_wrap_policy, _or_policy
-from transformers import LlamaTokenizerFast
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
 from prismatic.models.backbones.llm import LLMBackbone
@@ -570,87 +569,3 @@ class PrismaticVLM(VLM):
         generated_text = tokenizer.decode(generated_ids[0, input_ids.shape[1] :], skip_special_tokens=True).strip()
 
         return generated_text
-
-
-class OpenVLA(PrismaticVLM):
-    """
-    General VLA model interface. Mainly used to avoid breaking PrismaticVLM's existing function signatures/definitions.
-
-    Maps a few functions to superclass functions and exposes them for VLA model inference:
-        OpenVLA.generate_with_prompt() -> PrismaticVLM.generate()
-        OpenVLA.generate() -> GenerationMixin.generate() (the standard generate() function in HF Transformers models)
-    """
-
-    def __init__(
-        self,
-        model_id: str,
-        vision_backbone: VisionBackbone,
-        llm_backbone: LLMBackbone,
-        enable_mixed_precision_training: bool = True,
-        arch_specifier: str = "gelu-mlp",
-    ) -> None:
-        super().__init__(
-            model_id,
-            vision_backbone,
-            llm_backbone,
-            enable_mixed_precision_training,
-            arch_specifier,
-        )
-
-    @torch.inference_mode()
-    def generate_with_prompt(self, image: Image, prompt_text: str, **kwargs: str) -> str:
-        """
-        Calls a slightly modified version of PrismaticVLM.generate().
-
-        The main difference is that for Llama-based models, we append a special empty token ('') after the colon (':')
-        token in "ASSISTANT:" at the end of the input prompt. This is seen during training, so we need it at inference
-        time to avoid distribution shift. For some reason, it doesn't show up automatically during input prompt
-        tokenization at test time, so we add it in manually.
-        """
-        # For now, only support generation with a batch size of 1 for simplicity
-        image_transform, tokenizer = self.vision_backbone.image_transform, self.llm_backbone.tokenizer
-
-        # Prepare Inputs
-        input_ids = tokenizer(prompt_text, truncation=True, return_tensors="pt").input_ids.to(self.device)
-
-        if isinstance(tokenizer, LlamaTokenizerFast):
-            # IMPORTANT: Add a special empty token ('') after the colon (':') token in "ASSISTANT:" to match what is seen
-            # during training.
-            input_ids = torch.cat(
-                (input_ids, torch.unsqueeze(torch.Tensor([29871]).long(), dim=0).to(self.device)), 1
-            ).to(self.device)
-        else:
-            # TODO (MJ): Check what we need to do for VLMs that use other tokenizers.
-            raise ValueError(f"Unsupported `tokenizer` type = {type(tokenizer)}")
-
-        pixel_values = image_transform(image)
-        if isinstance(pixel_values, torch.Tensor):
-            pixel_values = pixel_values[None, ...].to(self.device)
-        elif isinstance(pixel_values, dict):
-            pixel_values = {k: v[None, ...].to(self.device) for k, v in pixel_values.items()}
-        else:
-            raise ValueError(f"Unsupported `pixel_values` type = {type(pixel_values)}")
-
-        # Invoke super(PrismaticVLM, self).generate --> taps into `GenerationMixin` which (redirects) to `forward()`
-        autocast_dtype = self.llm_backbone.half_precision_dtype
-        with torch.autocast("cuda", dtype=autocast_dtype, enabled=self.enable_mixed_precision_training):
-            # fmt: off
-            generated_ids = super(PrismaticVLM, self).generate(
-                input_ids=input_ids,            # Shape: [1, seq]
-                pixel_values=pixel_values,      # Shape: [1, 3, res, res] or Dict[str, Shape[1, 3, res, res]]
-                **kwargs
-            )
-            # fmt: on
-
-        generated_text = tokenizer.decode(generated_ids[0, input_ids.shape[1] :], skip_special_tokens=True).strip()
-
-        return generated_text
-
-    @torch.inference_mode()
-    def generate(
-        self,
-        **kwargs,
-    ) -> str:
-        """Calls GenerationMixin.generate()."""
-        generated_ids = super(PrismaticVLM, self).generate(**kwargs)
-        return generated_ids
