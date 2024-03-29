@@ -2,17 +2,18 @@
 # On client: pip install requests json-numpy
 
 """
-On client:
+On client (for server running on 0.0.0.0:8000):
+    import requests
+    import json_numpy
+    json_numpy.patch()
 
-import requests
-import json_numpy
-from json_numpy import loads
-json_numpy.patch()
+    action = requests.post(
+        "http://0.0.0.0:8000/act",
+        json={"image": np.zeros((256, 256, 3), dtype=np.uint8), "instruction": "do something"}
+    ).json()
 
-action = loads(requests.post(
-                urllib.parse.urljoin(self.url, endpoint),
-                json={"image": image, "instruction": instruction},
-            ).json())
+If your server is not reachable from the open internet, you can forward ports to your client via ssh:
+    ssh -L 8000:128.32.162.191:8000 ssh karl@128.32.162.191
 """
 
 

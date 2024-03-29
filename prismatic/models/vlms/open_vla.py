@@ -71,6 +71,7 @@ class OpenVLA(PrismaticVLM):
             generated_ids = super(PrismaticVLM, self).generate(
                 input_ids=input_ids,  # Shape: [1, seq]
                 pixel_values=pixel_values,  # Shape: [1, 3, res, res] or Dict[str, Shape[1, 3, res, res]]
+                max_new_tokens=self.action_dim,
                 **kwargs
             )
             # fmt: on
@@ -93,4 +94,4 @@ class OpenVLA(PrismaticVLM):
     @property
     def action_dim(self):
         """Dimensionality of the policy's action space."""
-        return len(self.action_norm_stats["action"]["q01"])
+        return len(self.action_norm_stats["q01"])
