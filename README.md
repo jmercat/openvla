@@ -320,11 +320,9 @@ NOTE: The second command will print a list of the cameras that the workstation h
 Now, in another Terminal, run the commands below. Modify args as needed.
 ```
 source /iris/u/moojink/.openvla_widowx_profile
-python vla-scripts/eval_vla_on_bridge_env.py \
-    --model.type siglip-224px+7b \
-    --pretrained_checkpoint /scr/moojink/checkpoints/tri/siglip-224px+mx-bridge+n1+b32+x7/checkpoints/step-080000-epoch-09-loss=0.1071.pt \
-    --data_stats_path /iris/u/moojink/prismatic-vlms/dataset_statistics/bridge_orig/dataset_statistics_ac6dcc8fcc63229c1c136a18356467ddd2c37585bbc4534798c38e45798fd93a.json
-
+python experiments/robot/eval_vla_on_bridge_env.py \
+    --model.type <VLM_TYPE> \
+    --pretrained_checkpoint <CHECKPOINT_PATH>
 ```
 
 ---

@@ -1,9 +1,7 @@
 """
 prismatic.py
 
-PyTorch Module defining:
-    - PrismaticVLM, our general interface for defining the various different VLMs in our work.
-    - OpenVLA, a subclass of PrismaticVLM that we use for VLA models.
+PyTorch Module defining a PrismaticVLM, our general interface for defining the various different VLMs in our work.
 
 Notes:
     - For now, we don't subclass `transformers.PretrainedModel` (or CausalLM). Instead, we assume a very limited subset

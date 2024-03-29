@@ -1,5 +1,5 @@
 """
-eval_vla_on_bridge_data.py
+eval_vla_on_data.py
 
 Runs a VLA checkpoint on samples from a dataset.
 (Sanity check to ensure we are doing test-time inference correctly.)

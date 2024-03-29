@@ -157,6 +157,7 @@ class GenerateConfig:
     # Environment-specific variables
     max_episodes = 50                                           # Maximum number of rollouts
     max_steps = 50                                              # Maximum number of steps per rollout
+    control_frequency = 5                                       # Robot control frequency in Hz
 
     # Training stage (doesn't matter here, but the loading function expects the argument)
     stage: str = "vla-finetune"
@@ -182,13 +183,17 @@ def main(cfg: GenerateConfig) -> None:
     task_label = ""
     episode_idx = 0
     while episode_idx < cfg.max_episodes:
+        # Get task description from user.
         task_label = get_next_task_label(task_label)
         rollout_images = []
+        # Reset environment.
         env.reset()
         env.start()
+        # Setup.
         t = 0
         zero_action_count = 0
-        step_duration = 0.2  # divide 1 by this to get control frequency
+        step_duration = 1.0 / cfg.control_frequency
+        # Start episode.
         input(f"Press Enter to start episode {episode_idx+1}...")
         last_tstamp = time.time()
         while t < cfg.max_steps:
@@ -219,7 +224,9 @@ def main(cfg: GenerateConfig) -> None:
             except Exception as e:
                 print(f"Caught exception: {e}")
                 break
+        # Save a replay GIF of the episode.
         save_rollout_gif(rollout_images, episode_idx)
+        # Redo episode or continue.
         if input("Enter 'r' if you want to redo the episode, or press Enter to continue: ") != "r":
             episode_idx += 1
 
