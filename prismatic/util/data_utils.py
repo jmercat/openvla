@@ -5,13 +5,18 @@ General utilities and classes for facilitating data loading and collation.
 """
 
 from dataclasses import dataclass
-from typing import Dict, Sequence, Tuple
+from typing import Callable, Dict, Sequence, Tuple
 
 import torch
 from torch.nn.utils.rnn import pad_sequence
 
 # HuggingFace Default / LLaMa-2 IGNORE_INDEX (for labels)
 IGNORE_INDEX = -100
+
+
+def tree_map(fn: Callable, tree: dict) -> dict:
+    """Maps a function over a nested dictionary."""
+    return {k: tree_map(fn, v) if isinstance(v, dict) else fn(v) for k, v in tree.items()}
 
 
 @dataclass

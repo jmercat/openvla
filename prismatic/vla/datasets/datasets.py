@@ -7,7 +7,7 @@ format to OpenVLA, IterableDataset shim.
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, Tuple, Type
+from typing import Any, Dict, Tuple, Type
 
 import torch
 from PIL import Image
@@ -16,6 +16,7 @@ from transformers import PreTrainedTokenizerBase
 
 from prismatic.models.backbones.llm.prompting import PromptBuilder
 from prismatic.models.backbones.vision import ImageTransform
+from prismatic.util.data_utils import tree_map
 from prismatic.vla.action_tokenizer import ActionTokenizer
 from prismatic.vla.datasets.rlds import make_interleaved_dataset, make_single_dataset
 from prismatic.vla.datasets.rlds.oxe import OXE_NAMED_MIXTURES, get_oxe_dataset_kwargs_and_weights
@@ -63,11 +64,6 @@ class RLDSBatchTransform:
             labels[-1] = IGNORE_INDEX
 
         return dict(pixel_values=pixel_values, input_ids=input_ids, labels=labels, dataset_name=dataset_name)
-
-
-def tree_map(fn: Callable, tree: dict) -> dict:
-    """Maps a function over a nested dictionary."""
-    return {k: tree_map(fn, v) if isinstance(v, dict) else fn(v) for k, v in tree.items()}
 
 
 class RLDSDataset(IterableDataset):
