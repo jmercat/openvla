@@ -174,5 +174,10 @@ OXE_NAMED_MIXTURES: Dict[str, List[Tuple[str, float]]] = {
         ("berkeley_fanuc_manipulation", 2.0),
         ("cmu_stretch", 1.0),
     ],
+
+    # === DROID Dataset ===
+    "droid": [
+        ("droid", 1.0),
+    ],
 }
 # fmt: on
