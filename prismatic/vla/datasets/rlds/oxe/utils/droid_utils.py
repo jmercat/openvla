@@ -18,15 +18,32 @@ def invert_rmat(rot_mat):
     return tfg.rotation_matrix_3d.inverse(rot_mat)
 
 
-def mat_to_rot6d(mat):
+def rotmat_to_rot6d(mat):
+    """
+    Converts rotation matrix to R6 rotation representation (first two rows in rotation matrix).
+    Args:
+        mat: rotation matrix
+
+    Returns: 6d vector (first two rows of rotation matrix)
+
+    """
     r6 = mat[..., :2, :]
     r6_0, r6_1 = r6[..., 0, :], r6[..., 1, :]
     r6_flat = tf.concat([r6_0, r6_1], axis=-1)
     return r6_flat
 
 
-def change_velocity_act_frame(velocity, frame):
-    R_frame = euler_to_rmat(frame[:, 3:6])
+def velocity_act_to_wrist_frame(velocity, wrist_in_robot_frame):
+    """
+    Translates velocity actions (translation + rotation) from base frame of the robot to wrist frame.
+    Args:
+        velocity: 6d velocity action (3 x translation, 3 x rotation)
+        wrist_in_robot_frame: 6d pose of the end-effector in robot base frame
+
+    Returns: 9d velocity action in robot wrist frame (3 x translation, 6 x rotation as R6)
+
+    """
+    R_frame = euler_to_rmat(wrist_in_robot_frame[:, 3:6])
     R_frame_inv = invert_rmat(R_frame)
 
     # world to wrist: dT_pi = R^-1 dT_rbt
@@ -35,18 +52,23 @@ def change_velocity_act_frame(velocity, frame):
     # world to wrist: dR_pi = R^-1 dR_rbt R
     dR = euler_to_rmat(velocity[:, 3:6])
     dR = R_frame_inv @ (dR @ R_frame)
-    dR_r6 = mat_to_rot6d(dR)
+    dR_r6 = rotmat_to_rot6d(dR)
     return tf.concat([vel_t, dR_r6], axis=-1)
 
 
 def rand_swap_exterior_images(img1, img2):
+    """
+    Randomly swaps the two exterior images (for training with single exterior input).
+    """
     return tf.cond(tf.random.uniform(shape=[]) > 0.5, lambda: (img1, img2), lambda: (img2, img1))
 
 
 def droid_baseact_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
-    # every input feature is batched, ie has leading batch dimension
+    """
+    DROID dataset transformation for actions expressed in *base* frame of the robot.
+    """
     dt = trajectory["action_dict"]["cartesian_velocity"][:, :3]
-    dR = mat_to_rot6d(euler_to_rmat(trajectory["action_dict"]["cartesian_velocity"][:, 3:6]))
+    dR = rotmat_to_rot6d(euler_to_rmat(trajectory["action_dict"]["cartesian_velocity"][:, 3:6]))
     trajectory["action"] = tf.concat(
         (
             dt,
@@ -72,8 +94,10 @@ def droid_baseact_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def droid_wristact_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
-    # every input feature is batched, ie has leading batch dimension
-    wrist_act = change_velocity_act_frame(
+    """
+    DROID dataset transformation for actions expressed in *wrist* frame of the robot.
+    """
+    wrist_act = velocity_act_to_wrist_frame(
         trajectory["action_dict"]["cartesian_velocity"], trajectory["observation"]["cartesian_position"]
     )
     trajectory["action"] = tf.concat(
