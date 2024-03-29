@@ -28,6 +28,7 @@ from pathlib import Path  # noqa: E402
 from typing import Any, Dict, Union  # noqa: E402
 
 import draccus  # noqa: E402
+import torch  # noqa: E402
 import uvicorn  # noqa: E402
 from fastapi import FastAPI  # noqa: E402
 from fastapi.responses import JSONResponse  # noqa: E402
@@ -69,6 +70,13 @@ class OpenVLAServer:
 
     def __init__(self, checkpoint_path, hf_token=None):
         self.vla: OpenVLA = load_vla(checkpoint_path, hf_token=hf_token)
+
+        # Cast to half precision, move to GPU.
+        device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
+        self.vla.vision_backbone.to(dtype=self.vla.vision_backbone.half_precision_dtype)
+        self.vla.llm_backbone.to(dtype=self.vla.llm_backbone.half_precision_dtype)
+        self.vla.to(dtype=self.vla.llm_backbone.half_precision_dtype)
+        self.vla.to(device)
 
     def run(self, host="0.0.0.0", port=8000):
         self.app = FastAPI()
