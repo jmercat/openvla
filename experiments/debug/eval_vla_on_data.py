@@ -12,6 +12,7 @@ Usage:
 """
 
 import copy
+import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -23,16 +24,174 @@ import torch
 from PIL import Image
 from torch.utils.data import DataLoader
 from torchvision.transforms import Normalize
+from transformers import LlamaTokenizerFast
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
-from prismatic.conf import DatasetConfig, DatasetRegistry, VLAConfig, VLARegistry
-from prismatic.models import load_vla
+from prismatic.conf import DatasetConfig, DatasetRegistry, ModelConfig, VLAConfig, VLARegistry
+from prismatic.models.materialize import get_llm_backbone_and_tokenizer, get_vision_backbone_and_transform
+from prismatic.models.vlms import OpenVLA, PrismaticVLM
+from prismatic.overwatch import initialize_overwatch
 from prismatic.vla import get_vla_dataset_and_collator
+from prismatic.vla.action_tokenizer import ActionTokenizer
 
 # Initialize important constants and pretty-printing mode in NumPy.
 ACTION_DIM = 7
 DEVICE = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
 np.set_printoptions(formatter={"float": lambda x: "{0:0.3f}".format(x)})
+
+# Initialize Overwatch =>> Wraps `logging.Logger`
+overwatch = initialize_overwatch(__name__)
+
+
+class ModifiedOpenVLA(OpenVLA):
+    """
+    Subclass of OpenVLA that overrides `predict_action()`.
+    """
+
+    def __init__(
+        self,
+        *args,
+        action_norm_stats,
+        action_tokenizer,
+        **kwargs,
+    ) -> None:
+        super(ModifiedOpenVLA, self).__init__(
+            *args, action_norm_stats=action_norm_stats, action_tokenizer=action_tokenizer, **kwargs
+        )
+
+    @torch.inference_mode()
+    def predict_action(self, image: Image, instruction: str, **kwargs: str) -> np.ndarray:
+        """Same as `OpenVLA.predict_action()`, except that we also return `predicted_action_token_ids`."""
+        # For now, only support generation with a batch size of 1 for simplicity
+        image_transform, tokenizer = self.vision_backbone.image_transform, self.llm_backbone.tokenizer
+
+        # Build VLA prompt
+        prompt_builder = self.get_prompt_builder()
+        prompt_builder.add_turn(role="human", message=f"What action should the robot take to {instruction.lower()}?")
+        prompt_text = prompt_builder.get_prompt()
+
+        # Prepare Inputs
+        input_ids = tokenizer(prompt_text, truncation=True, return_tensors="pt").input_ids.to(self.device)
+
+        if isinstance(tokenizer, LlamaTokenizerFast):
+            # Note (Moo Jin): We need to add this special empty token ('') after the colon (':') token in "ASSISTANT:"
+            # in order for the predictions to match the training configuration and be accurate.
+            input_ids = torch.cat(
+                (input_ids, torch.unsqueeze(torch.Tensor([29871]).long(), dim=0).to(self.device)), dim=1
+            )
+        else:
+            # TODO (Moo Jin): figure out how to make this tokenizer-independent
+            raise ValueError(f"Unsupported `tokenizer` type = {type(tokenizer)}")
+
+        pixel_values = image_transform(image)
+        if isinstance(pixel_values, torch.Tensor):
+            pixel_values = pixel_values[None, ...].to(self.device)
+        elif isinstance(pixel_values, dict):
+            pixel_values = {k: v[None, ...].to(self.device) for k, v in pixel_values.items()}
+        else:
+            raise ValueError(f"Unsupported `pixel_values` type = {type(pixel_values)}")
+
+        # Invoke super().generate --> taps into `GenerationMixin` which (redirects) to `forward()`
+        autocast_dtype = self.llm_backbone.half_precision_dtype
+        with torch.autocast("cuda", dtype=autocast_dtype, enabled=self.enable_mixed_precision_training):
+            # fmt: off
+            generated_ids = super(PrismaticVLM, self).generate(
+                input_ids=input_ids,  # Shape: [1, seq]
+                pixel_values=pixel_values,  # Shape: [1, 3, res, res] or Dict[str, Shape[1, 3, res, res]]
+                max_new_tokens=self.action_dim,
+                **kwargs
+            )
+            # fmt: on
+
+        # Extract predicted action tokens and translate into (normalized) continuous actions
+        predicted_action_token_ids = generated_ids[:, -self.action_dim :]
+        normalized_actions = self.action_tokenizer.decode_token_ids_to_actions(predicted_action_token_ids.cpu().numpy())
+
+        # Unnormalize actions
+        mask = self.action_norm_stats.get("mask", np.ones_like(self.action_norm_stats["mean"], dtype=bool))
+        action_high, action_low = np.array(self.action_norm_stats["q99"]), np.array(self.action_norm_stats["q01"])
+        actions = np.where(
+            mask,
+            0.5 * (normalized_actions + 1) * (action_high - action_low) + action_low,
+            normalized_actions,
+        )
+
+        return actions, predicted_action_token_ids
+
+
+def load_vla(
+    model_path,
+    hf_token=None,
+    cache_dir=None,
+    load_for_training=False,
+) -> OpenVLA:
+    """Same as prismatic.models.load.load_vla() except that we load ModifiedOpenVLA instead of OpenVLA."""
+    overwatch.info(f"Loading from local checkpoint path `{model_path}`")
+
+    # Assert that the checkpoint path looks like: `..../<RUN_ID>/checkpoints/<CHECKPOINT_DIR>`
+    assert os.path.isfile(model_path)
+    assert model_path[-3:] == ".pt" and model_path.split("/")[-2] == "checkpoints" and len(model_path.split("/")) >= 3
+    run_dir = Path("/".join(model_path.split("/")[:-2]))  # `..../<RUN_ID>`
+
+    # Get paths for `config.json`, 'dataset_statistics.json' and pretrained checkpoint
+    config_json = run_dir / "config.json"
+    dataset_stats_json = run_dir / "dataset_statistics.json"
+    checkpoint_pt = model_path
+    assert config_json.exists(), f"Missing `config.json` for `{run_dir = }`"
+    assert dataset_stats_json.exists(), f"Missing `dataset_statistics.json` for `{run_dir = }`"
+
+    # Load VLA Config from `config.json` and extract Model Config
+    with open(config_json, "r") as f:
+        vla_cfg = json.load(f)["vla"]
+        model_cfg = ModelConfig.get_choice_class(vla_cfg["base_vlm"])()
+
+    # Load dataset statistics for action de-normalization
+    with open(dataset_stats_json, "r") as f:
+        action_norm_stats = json.load(f)["action"]
+
+    # = Load Individual Components necessary for Instantiating a VLM =
+    #   =>> Print Minimal Config
+    overwatch.info(
+        f"Found Config =>> Loading & Freezing [bold blue]{model_cfg.model_id}[/] with:\n"
+        f"             Vision Backbone =>> [bold]{model_cfg.vision_backbone_id}[/]\n"
+        f"             LLM Backbone    =>> [bold]{model_cfg.llm_backbone_id}[/]\n"
+        f"             Arch Specifier  =>> [bold]{model_cfg.arch_specifier}[/]\n"
+        f"             Checkpoint Path =>> [underline]`{checkpoint_pt}`[/]"
+    )
+
+    # Load Vision Backbone
+    overwatch.info(f"Loading Vision Backbone [bold]{model_cfg.vision_backbone_id}[/]")
+    vision_backbone, image_transform = get_vision_backbone_and_transform(
+        model_cfg.vision_backbone_id,
+        model_cfg.image_resize_strategy,
+    )
+
+    # Load LLM Backbone --> note `inference_mode = True` by default when calling `load()`
+    overwatch.info(f"Loading Pretrained LLM [bold]{model_cfg.llm_backbone_id}[/] via HF Transformers")
+    llm_backbone, tokenizer = get_llm_backbone_and_tokenizer(
+        model_cfg.llm_backbone_id,
+        llm_max_length=model_cfg.llm_max_length,
+        hf_token=hf_token,
+        inference_mode=not load_for_training,
+    )
+
+    # Create action tokenizer
+    action_tokenizer = ActionTokenizer(llm_backbone.get_tokenizer())
+
+    # Load VLM using `from_pretrained` (clobbers HF syntax... eventually should reconcile)
+    overwatch.info(f"Loading VLM [bold blue]{model_cfg.model_id}[/] from Checkpoint")
+    vla = ModifiedOpenVLA.from_pretrained(
+        checkpoint_pt,
+        model_cfg.model_id,
+        vision_backbone,
+        llm_backbone,
+        arch_specifier=model_cfg.arch_specifier,
+        freeze_weights=not load_for_training,
+        action_norm_stats=action_norm_stats,
+        action_tokenizer=action_tokenizer,
+    )
+
+    return vla
 
 
 @dataclass
@@ -140,8 +299,8 @@ def eval_no_teacher_forcing(batch, vla, action_tokenizer):
     inputs["input_ids"] = inputs["input_ids"][:, : -ACTION_DIM - 1]
     inputs["labels"] = inputs["labels"][:, : -ACTION_DIM - 1]
     inputs["attention_mask"] = inputs["attention_mask"][:, : -ACTION_DIM - 1]
-    # Call `generate()` to generate action tokens.
-    generated_ids = vla.generate(**inputs, max_new_tokens=ACTION_DIM, do_sample=False)
+    # Call HF-style `generate()` (via superclass of PrismaticVLM) to generate action tokens.
+    generated_ids = super(PrismaticVLM, vla).generate(**inputs, max_new_tokens=ACTION_DIM, do_sample=False)
     predicted_action_token_ids = generated_ids[:, -ACTION_DIM:]
     # Compute action tokens accuracy and L1 loss.
     actions_accuracy, l1_loss = compute_actions_accuracy_l1_loss(
@@ -201,8 +360,8 @@ def eval_no_teacher_forcing_manual_generate(batch, vla, action_tokenizer):
 def eval_no_teacher_forcing_prompt_builder(batch, vla, action_tokenizer, tokenizer, image_transform):
     """
     Evaluates model on input batch without using teacher forcing.
-    Leverages Prismatic prompt builder and `generate_with_prompt()`.
-    We use greedy decoding here by passing `do_sample=False` to `generate_with_prompt()`.
+    Leverages method `ModifiedOpenVLA.predict_action()`.
+    We use greedy decoding here by passing `do_sample=False` to `generate()`.
 
     Pretty hacky because we need to recover the original image from `pixel_values` somehow (via un-normalization).
     """
@@ -220,8 +379,7 @@ def eval_no_teacher_forcing_prompt_builder(batch, vla, action_tokenizer, tokeniz
         np.transpose(unnormalize(inputs["pixel_values"][0]).type(torch.float32).cpu().numpy(), (1, 2, 0)) * 255
     )
     image = Image.fromarray(image).convert("RGB")
-    # Build the input prompt.
-    prompt_builder = vla.get_prompt_builder()
+    # Extract task description.
     TASK_DESCRIPTION_START_IDX = 34
     assert (
         tokenizer.decode(inputs["input_ids"][0][:TASK_DESCRIPTION_START_IDX])
@@ -233,13 +391,8 @@ def eval_no_teacher_forcing_prompt_builder(batch, vla, action_tokenizer, tokeniz
     message = tokenizer.decode(
         inputs["input_ids"][0][TASK_DESCRIPTION_START_IDX : -ACTION_DIM - NUM_TOKENS_FOR_ASSISTANT]
     )
-    prompt_builder.add_turn(role="human", message=message)
-    prompt_text = prompt_builder.get_prompt()
-    # Call `generate_with_prompt()` to generate action tokens.
-    generated_text = vla.generate_with_prompt(image, prompt_text, max_new_tokens=ACTION_DIM, do_sample=False)
-    predicted_action_token_ids = torch.unsqueeze(
-        torch.Tensor(tokenizer(generated_text)["input_ids"][-ACTION_DIM:]).long(), dim=0
-    ).to(DEVICE)
+    # Call `ModifiedOpenVLA.predict_action()` to generate action tokens.
+    action, predicted_action_token_ids = vla.predict_action(image, message, do_sample=False)
     # Compute action tokens accuracy and L1 loss.
     ground_truth_action_token_ids = inputs["labels"][:, -1 - ACTION_DIM : -1]
     actions_accuracy, l1_loss = compute_actions_accuracy_l1_loss(
@@ -328,7 +481,7 @@ def main(cfg: GenerateConfig) -> None:
         stats_dict["teacher_forcing"]["l1_loss"] += l1_loss
         stats_dict["teacher_forcing"]["actions_accuracy"] += actions_accuracy
         print("-----------------------------------------------------------")
-        # Generate actions without teacher forcing: via `generate()`.
+        # Generate actions without teacher forcing: via HF-style `generate()`.
         actions_accuracy, l1_loss = eval_no_teacher_forcing(batch, vla, action_tokenizer)
         stats_dict["no_teacher_forcing"]["l1_loss"] += l1_loss
         stats_dict["no_teacher_forcing"]["actions_accuracy"] += actions_accuracy
@@ -338,7 +491,7 @@ def main(cfg: GenerateConfig) -> None:
         stats_dict["no_teacher_forcing_manual_generate"]["l1_loss"] += l1_loss
         stats_dict["no_teacher_forcing_manual_generate"]["actions_accuracy"] += actions_accuracy
         print("-----------------------------------------------------------")
-        # Generate actions without teacher forcing: via prompt builder.
+        # Generate actions without teacher forcing: via `ModifiedOpenVLA.predict_action()`.
         if batch_size == 1:
             actions_accuracy, l1_loss = eval_no_teacher_forcing_prompt_builder(
                 batch, vla, action_tokenizer, tokenizer, image_transform

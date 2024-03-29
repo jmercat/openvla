@@ -6,11 +6,9 @@ Runs a VLA checkpoint in a real-world Bridge V2 environment.
 Usage:
     python experiments/robot/eval_vla_on_bridge_env.py \
         --model.type <VLM_TYPE> \
-        --pretrained_checkpoint <CHECKPOINT_PATH> \
-        --data_stats_path ./experiments/dataset_statistics/bridge_stats.json
+        --pretrained_checkpoint <CHECKPOINT_PATH>
 """
 
-import json
 import os
 import sys
 import time
@@ -29,7 +27,6 @@ from PIL import Image
 from prismatic.conf import ModelConfig, ModelRegistry
 from prismatic.models import load_vla
 from prismatic.models.materialize import VISION_BACKBONES
-from prismatic.vla.action_tokenizer import ActionTokenizer
 
 sys.path.append("./")  # hack so that the interpreter can find widowx_real_env
 from experiments.robot.widowx_real_env import JaxRLWidowXEnv
@@ -133,43 +130,11 @@ def get_img(obs, resize_size):
     return img
 
 
-def get_vla_action(vla, image, task_label, tokenizer, action_tokenizer):
+def get_vla_action(vla, image, task_label):
     """Generates an action with the VLA policy."""
     assert image.size[0] == image.size[1]
-    prompt_builder = vla.get_prompt_builder()
-    prompt_builder.add_turn(role="human", message=f"What action should the robot take to {task_label.lower()}?")
-    prompt_text = prompt_builder.get_prompt()
-    generated_text = vla.generate_with_prompt(image, prompt_text, max_new_tokens=ACTION_DIM, do_sample=False)
-    predicted_action_token_ids = torch.unsqueeze(
-        torch.Tensor(tokenizer(generated_text)["input_ids"][-ACTION_DIM:]).long(), dim=0
-    ).to(DEVICE)
-    normalized_action = action_tokenizer.decode_token_ids_to_actions(predicted_action_token_ids.cpu().numpy())[0]
-    return normalized_action
-
-
-def get_action_norm_metadata(data_stats_path):
-    """Retrieves dataset statistics used for action unnormalization."""
-    with open(data_stats_path, "r") as f:
-        metadata = json.load(f)
-    return metadata
-
-
-def unnormalize_action(action, metadata):
-    """Un-normalizes action to be in the original dataset scale.
-    Loads in a file containing action stats (min, max, std, etc.) and uses those to
-    scale the actions.
-
-    Normalization formula: y = 2 * (x - orig_low) / (orig_high - orig_low) - 1
-
-    To un-normalize, we solve for x:
-        x = 0.5 * (y + 1) * (orig_high - orig_low) + orig_low
-
-    action: numpy array, shape=(7,), dtype=np.float32
-    """
-    action_low = np.array(metadata["action"]["q01"])
-    action_high = np.array(metadata["action"]["q99"])
-    out = 0.5 * (action + 1) * (action_high - action_low) + action_low
-    return out
+    action = vla.predict_action(image, task_label, do_sample=False)
+    return action
 
 
 @dataclass
@@ -189,9 +154,6 @@ class GenerateConfig:
         )
     )
 
-    # Dataset statistics path (for action unnormalization)
-    data_stats_path: str = "./experiments/dataset_statistics/bridge_stats.json"
-
     # Environment-specific variables
     max_episodes = 50                                           # Maximum number of rollouts
     max_steps = 50                                              # Maximum number of steps per rollout
@@ -210,13 +172,10 @@ class GenerateConfig:
 @draccus.wrap()
 def main(cfg: GenerateConfig) -> None:
     assert cfg.pretrained_checkpoint is not None, "cfg.pretrained_checkpoint must not be None!"
-    # Get action unnormalization stats and image resize size.
-    metadata = get_action_norm_metadata(cfg.data_stats_path)
+    # Get image resize size.
     resize_size = get_image_resize_size(cfg.model.vision_backbone_id)
-    # Get VLA policy, tokenizer, and action tokenizer.
+    # Get VLA policy.
     vla = get_vla(cfg)
-    tokenizer = vla.llm_backbone.get_tokenizer()
-    action_tokenizer = ActionTokenizer(tokenizer)
     # Initialize the WidowX environment.
     env = get_env()
     # Start evaluation.
@@ -243,8 +202,7 @@ def main(cfg: GenerateConfig) -> None:
                     # Get preprocessed image.
                     img = get_img(obs, resize_size)
                     # Generate action with VLA model.
-                    normalized_action = get_vla_action(vla, img, task_label, tokenizer, action_tokenizer)
-                    action = unnormalize_action(normalized_action, metadata)
+                    action = get_vla_action(vla, img, task_label)
                     # End episode early if the robot doesn't move at all for a few consecutive steps.
                     if np.isclose(np.linalg.norm(action), 1, atol=0.01) and np.linalg.norm(action[:6]) < 0.01:
                         zero_action_count += 1
