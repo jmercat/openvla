@@ -15,7 +15,7 @@ from prismatic.models.backbones.llm.prompting import PromptBuilder
 from prismatic.models.backbones.vision import ImageTransform
 from prismatic.util.data_utils import PaddedCollatorForActionPrediction
 from prismatic.vla.action_tokenizer import ActionTokenizer
-from prismatic.vla.datasets import RLDSBatchTransform, RLDSDataset
+from prismatic.vla.datasets import EpisodicRLDSDataset, RLDSBatchTransform, RLDSDataset
 
 
 def get_vla_dataset_and_collator(
@@ -41,14 +41,14 @@ def get_vla_dataset_and_collator(
     )
 
     # Build RLDS Iterable Dataset & Return
-    dataset = RLDSDataset(
+    cls = RLDSDataset if not episodic else EpisodicRLDSDataset
+    dataset = cls(
         data_root_dir,
         data_mix,
         batch_transform,
         resize_resolution=default_image_resolution[1:],
         shuffle_buffer_size=shuffle_buffer_size,
         train=train,
-        episodic=episodic,
     )
 
     return dataset, action_tokenizer, collator

@@ -1,1 +1,1 @@
-from .datasets import RLDSBatchTransform, RLDSDataset
+from .datasets import EpisodicRLDSDataset, RLDSBatchTransform, RLDSDataset

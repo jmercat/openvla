@@ -31,11 +31,6 @@ assert "MS2_ASSET_DIR" in os.environ, (
     "Usage: `MS2_ASSET_DIR=./ManiSkill2_real2sim/data python test_real2sim.py ...`"
 )
 
-NUM_EPISODES = 5
-MAX_STEPS = 100  # TODO: retrieve this from env
-np.set_printoptions(formatter={"float": lambda x: "{0:0.2f}".format(x)})
-TIME = time.strftime("%Y_%m_%d-%H_%M_%S")
-
 
 def get_image_resize_size(vision_backbone_id: str) -> Tuple[int, int]:
     """Gets image resize size from vision backbone ID."""
@@ -79,6 +74,8 @@ class GenerateConfig:
 
     # Environment
     env_name: str = 'widowx_spoon_on_towel'
+    max_rollout_steps: int = 100
+    eval_episodes: int = 5
 
     # Training stage (doesn't matter here, but the loading function expects the argument)
     stage: str = "vla-finetune"
@@ -99,7 +96,11 @@ def eval_policy(cfg: GenerateConfig) -> None:
     assert cfg.pretrained_checkpoint is not None, "cfg.pretrained_checkpoint must not be None!"
 
     # initialize logging
-    wandb.init(project="openvla", name=f"EVAL_{cfg.model.model_id}_{cfg.env_name}_{TIME}", entity="clvr")
+    wandb.init(
+        project="openvla",
+        name=f"EVAL_{cfg.model.model_id}_{cfg.env_name}_{time.strftime('%Y_%m_%d-%H_%M_%S')}",
+        entity="clvr",
+    )
 
     print(f"[*] Initializing Generation Playground with `{cfg.model_family}`")
     hf_token = cfg.hf_token.read_text().strip() if isinstance(cfg.hf_token, Path) else os.environ[cfg.hf_token]
@@ -124,7 +125,7 @@ def eval_policy(cfg: GenerateConfig) -> None:
     num_successes = 0
     # Initialize the real2sim environment.
     env = real2sim.make(cfg.env_name)
-    for j in range(NUM_EPISODES):
+    for j in range(cfg.eval_episodes):
         # Reset environment.
         obs, reset_info = env.reset()
         # Setup.
@@ -134,7 +135,7 @@ def eval_policy(cfg: GenerateConfig) -> None:
         rollout_images = []
         print(f"Starting episode {j+1}...")
         done, truncated = False, False
-        with tqdm.tqdm(total=MAX_STEPS) as pbar:
+        with tqdm.tqdm(total=cfg.max_rollout_steps) as pbar:
             while not (done or truncated):
                 try:
                     t += 1

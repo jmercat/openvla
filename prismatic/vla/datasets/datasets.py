@@ -79,11 +79,9 @@ class RLDSDataset(IterableDataset):
         resize_resolution: Tuple[int, int],
         shuffle_buffer_size: int = 256_000,
         train: bool = True,
-        episodic: bool = False,
     ) -> None:
         """Lightweight wrapper around RLDS TFDS Pipeline for use with PyTorch/OpenVLA Data Loaders."""
         self.data_root_dir, self.data_mix, self.batch_transform = data_root_dir, data_mix, batch_transform
-        self.episodic = episodic
 
         # Configure RLDS Dataset(s)
         if self.data_mix in OXE_NAMED_MIXTURES:
@@ -138,27 +136,14 @@ class RLDSDataset(IterableDataset):
         # fmt: on
 
         # Initialize RLDS Dataset
-        if self.episodic:
-            assert len(per_dataset_kwargs) == 1, "Only support single-dataset `mixes` for episodic datasets."
-            self.dataset, self.dataset_length = make_single_dataset(
-                per_dataset_kwargs[0],
-                train=train,
-                traj_transform_kwargs=rlds_config["traj_transform_kwargs"],
-                frame_transform_kwargs=rlds_config["frame_transform_kwargs"],
-            )
-        else:
-            self.dataset, self.dataset_length = make_interleaved_dataset(**rlds_config)
+        self.dataset, self.dataset_length = self.make_dataset(rlds_config)
+
+    def make_dataset(self, rlds_config):
+        return make_interleaved_dataset(**rlds_config)
 
     def __iter__(self) -> Dict[str, Any]:
         for rlds_batch in self.dataset.as_numpy_iterator():
-            if not self.episodic:
-                yield self.batch_transform(rlds_batch)
-            else:
-                out = [
-                    self.batch_transform(tree_map(lambda x: x[i], rlds_batch))  # noqa: B023
-                    for i in range(rlds_batch["action"].shape[0])
-                ]
-                yield out
+            yield self.batch_transform(rlds_batch)
 
     def __len__(self) -> int:
         return self.dataset_length
@@ -166,3 +151,28 @@ class RLDSDataset(IterableDataset):
     # === Explicitly Unused ===
     def __getitem__(self, idx: int) -> None:
         raise NotImplementedError("IterableDataset does not implement map-style __getitem__; see __iter__ instead!")
+
+
+class EpisodicRLDSDataset(RLDSDataset):
+    """
+    Returns full episodes as list of steps instead of individual transitions (useful for visualizations).
+    """
+
+    def make_dataset(self, rlds_config):
+        per_dataset_kwargs = rlds_config["dataset_kwargs_list"]
+        assert len(per_dataset_kwargs) == 1, "Only support single-dataset `mixes` for episodic datasets."
+
+        return make_single_dataset(
+            per_dataset_kwargs[0],
+            train=rlds_config["train"],
+            traj_transform_kwargs=rlds_config["traj_transform_kwargs"],
+            frame_transform_kwargs=rlds_config["frame_transform_kwargs"],
+        )
+
+    def __iter__(self) -> Dict[str, Any]:
+        for rlds_batch in self.dataset.as_numpy_iterator():
+            out = [
+                self.batch_transform(tree_map(lambda x: x[i], rlds_batch))  # noqa: B023
+                for i in range(rlds_batch["action"].shape[0])
+            ]
+            yield out
