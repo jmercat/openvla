@@ -17,6 +17,7 @@ from prismatic.models.materialize import get_llm_backbone_and_tokenizer, get_vis
 from prismatic.models.registry import GLOBAL_REGISTRY, MODEL_REGISTRY
 from prismatic.models.vlms import OpenVLA, PrismaticVLM
 from prismatic.overwatch import initialize_overwatch
+from prismatic.vla.action_tokenizer import ActionTokenizer
 
 # Initialize Overwatch =>> Wraps `logging.Logger`
 overwatch = initialize_overwatch(__name__)
@@ -130,16 +131,23 @@ def load_vla(
     assert model_path[-3:] == ".pt" and model_path.split("/")[-2] == "checkpoints" and len(model_path.split("/")) >= 3
     run_dir = Path("/".join(model_path.split("/")[:-2]))  # `..../<RUN_ID>`
 
-    # Get paths for `config.json` and pretrained checkpoint
-    config_json, checkpoint_pt = run_dir / "config.json", model_path
+    # Get paths for `config.json`, 'dataset_statistics.json' and pretrained checkpoint
+    config_json = run_dir / "config.json"
+    dataset_stats_json = run_dir / "dataset_statistics.json"
+    checkpoint_pt = model_path
     assert config_json.exists(), f"Missing `config.json` for `{run_dir = }`"
+    assert dataset_stats_json.exists(), f"Missing `dataset_statistics.json` for `{run_dir = }`"
 
     # Load VLA Config from `config.json` and extract Model Config
     with open(config_json, "r") as f:
         vla_cfg = json.load(f)["vla"]
         model_cfg = ModelConfig.get_choice_class(vla_cfg["base_vlm"])()
 
-    # = Load Individual Components necessary for Instantiating a VLA =
+    # Load dataset statistics for action de-normalization
+    with open(dataset_stats_json, "r") as f:
+        action_norm_stats = json.load(f)["action"]
+
+    # = Load Individual Components necessary for Instantiating a VLM =
     #   =>> Print Minimal Config
     overwatch.info(
         f"Found Config =>> Loading & Freezing [bold blue]{model_cfg.model_id}[/] with:\n"
@@ -165,8 +173,11 @@ def load_vla(
         inference_mode=not load_for_training,
     )
 
-    # Load VLA using `from_pretrained` (clobbers HF syntax... eventually should reconcile)
-    overwatch.info(f"Loading VLA [bold blue]{model_cfg.model_id}[/] from Checkpoint")
+    # Create action tokenizer
+    action_tokenizer = ActionTokenizer(llm_backbone.get_tokenizer())
+
+    # Load VLM using `from_pretrained` (clobbers HF syntax... eventually should reconcile)
+    overwatch.info(f"Loading VLM [bold blue]{model_cfg.model_id}[/] from Checkpoint")
     vla = OpenVLA.from_pretrained(
         checkpoint_pt,
         model_cfg.model_id,
@@ -174,6 +185,8 @@ def load_vla(
         llm_backbone,
         arch_specifier=model_cfg.arch_specifier,
         freeze_weights=not load_for_training,
+        action_norm_stats=action_norm_stats,
+        action_tokenizer=action_tokenizer,
     )
 
     return vla

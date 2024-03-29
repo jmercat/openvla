@@ -46,6 +46,7 @@ class PrismaticVLM(VLM):
         llm_backbone: LLMBackbone,
         enable_mixed_precision_training: bool = True,
         arch_specifier: str = "gelu-mlp",
+        **kwargs,
     ) -> None:
         super().__init__(
             "prismatic",
@@ -94,6 +95,7 @@ class PrismaticVLM(VLM):
         enable_mixed_precision_training: bool = True,
         arch_specifier: str = "gelu-mlp",
         freeze_weights: bool = True,
+        **kwargs,
     ) -> PrismaticVLM:
         """Initialize a PrismaticVLM from a pretrained checkpoint, freezing all weights, tailored for inference."""
         vlm = cls(
@@ -102,6 +104,7 @@ class PrismaticVLM(VLM):
             llm_backbone,
             enable_mixed_precision_training=enable_mixed_precision_training,
             arch_specifier=arch_specifier,
+            **kwargs,
         )
 
         # Load from Checkpoint (Custom --> should load both *projector* and *llm* weights)

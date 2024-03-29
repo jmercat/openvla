@@ -410,6 +410,36 @@ def apply_frame_transforms(
     return dataset
 
 
+def make_single_dataset(
+    dataset_kwargs: dict,
+    *,
+    train: bool,
+    traj_transform_kwargs: dict = {},
+    frame_transform_kwargs: dict = {},
+) -> dl.DLataset:
+    """Creates a single dataset from kwargs. Returns a dataset of trajectories.
+
+    Args:
+        dataset_kwargs: kwargs passed to `make_dataset_from_rlds` that are dataset-specific.
+        train: whether this is a training or validation dataset.
+        traj_transform_kwargs: kwargs passed to 'apply_trajectory_transforms'.
+        frame_transform_kwargs: kwargs passed to 'get_frame_transforms'.
+    """
+    dataset, dataset_statistics = make_dataset_from_rlds(
+        **dataset_kwargs,
+        train=train,
+    )
+    dataset = apply_trajectory_transforms(dataset, **traj_transform_kwargs, train=train)
+    dataset = apply_frame_transforms(dataset, **frame_transform_kwargs, train=train)
+
+    # this seems to reduce memory usage without affecting speed
+    dataset = dataset.with_ram_budget(1)
+
+    # save for later
+    dataset.dataset_statistics = dataset_statistics
+    return dataset, dataset_statistics["num_trajectories"]
+
+
 # === Core Initializer ===
 def make_interleaved_dataset(
     dataset_kwargs_list: List[Dict],

@@ -19,6 +19,7 @@ from typing import Any, Dict
 
 import tensorflow as tf
 
+from prismatic.vla.datasets.rlds.oxe.utils.droid_utils import droid_baseact_transform
 from prismatic.vla.datasets.rlds.utils.data_utils import (
     binarize_gripper_actions,
     invert_gripper_actions,
@@ -814,4 +815,5 @@ OXE_STANDARDIZATION_TRANSFORMS = {
     "berkeley_gnm_recon": gnm_dataset_transform,
     "berkeley_gnm_cory_hall": gnm_dataset_transform,
     "berkeley_gnm_sac_son": gnm_dataset_transform,
+    "droid": droid_baseact_transform,
 }

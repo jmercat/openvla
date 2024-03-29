@@ -36,13 +36,13 @@ LUSTRE_PARAMETERS = {
 class LaunchConfig:
     # fmt: off
     job_name: str = "sk-openvla"                                        # Base Name for Job in Sagemaker Dashboard
-    instance_count: int = 1                                             # Number of Nodes for Multi-Node Training
+    instance_count: int = 8                                             # Number of Nodes for Multi-Node Training
     instance_type: str = "ml.p4de.24xlarge"                             # Instance Type (default: p4de.24xlarge)
     instance_n_gpus: int = 8                                            # Number of GPUs per Instance
 
     # OpenVLA Training Parameters
     vla_type: str = (                                                   # Unique VLA ID (specifies config)
-        VLARegistry.FREEZE_DINOSIGLIP_384PX_MX_BRIDGE.vla_id
+        VLARegistry.SIGLIP_224PX_MX_OXE_MAGIC_SOUP.vla_id
     )
 
     # Updated Paths for Data / Runs (on Sagemaker Volume)
@@ -59,7 +59,7 @@ class LaunchConfig:
     image_uri: str = (                                                  # Path to Sagemaker Docker Image (in AWS ECR)
         "124224456861.dkr.ecr.us-east-1.amazonaws.com/openvla:latest"
     )
-    max_days: int = 7                                                   # Cutoff for Training Time
+    max_days: int = 10                                                  # Cutoff for Training Time
 
     # Weights & Biases API Key
     wandb_api_key: Union[str, Path] = Path(".wandb_api_key")            # W&B API Key (for real-time logging)

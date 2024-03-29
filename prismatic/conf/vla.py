@@ -149,6 +149,49 @@ class Exp_LR2E5_SigLIP_224px_Bridge(Exp_LLaVa15_Bridge):
     learning_rate: float = 2e-5
 
 
+@dataclass
+class Exp_LR4E5_SigLIP_224px_Bridge(Exp_LLaVa15_Bridge):
+    vla_id: str = "lr-4e5+siglip-224px+mx-bridge"
+    base_vlm: Union[str, Path] = "siglip-224px+7b"
+    freeze_vision_backbone: bool = False
+
+    learning_rate: float = 4e-5
+
+
+@dataclass
+class Exp_LR1E4_SigLIP_224px_Bridge(Exp_LLaVa15_Bridge):
+    vla_id: str = "lr-1e4+siglip-224px+mx-bridge"
+    base_vlm: Union[str, Path] = "siglip-224px+7b"
+    freeze_vision_backbone: bool = False
+
+    learning_rate: float = 1e-4
+
+
+# === [64 GPU] SigLIP 224px + OXE Magic Soup ===
+@dataclass
+class Exp_SigLIP_224px_OXE_Magic_Soup(Exp_LLaVa15_Bridge):
+    vla_id: str = "siglip-224px+mx-oxe-magic-soup"
+    base_vlm: Union[str, Path] = "siglip-224px+7b"
+    freeze_vision_backbone: bool = False
+
+    data_mix: str = "oxe_magic_soup"
+
+    expected_world_size: int = 64
+    global_batch_size: int = 2048
+    per_device_batch_size: int = 32
+
+    learning_rate: float = 2e-5
+
+
+# === [8 GPU] Fast Iteration =>> SigLIP 224px + DROID ===
+@dataclass
+class Exp_SigLIP_224px_DROID(Exp_LLaVa15_Bridge):
+    vla_id: str = "siglip-224px+mx-droid"
+    base_vlm: Union[str, Path] = "siglip-224px+7b"
+
+    data_mix: str = "droid"
+
+
 # === Define a VLA Registry Enum for Reference & Validation ===
 @unique
 class VLARegistry(Enum):
@@ -164,8 +207,16 @@ class VLARegistry(Enum):
     DINOSIGLIP_384PX_MX_BRIDGE = Exp_DINOSigLIP_384px_Bridge
     FREEZE_DINOSIGLIP_384PX_MX_BRIDGE = Exp_FreezeVIT_DINOSigLIP_384px_Bridge
 
-    LR_1E5_SIGLIP_224PX_ICY_MX_BRIDGE = Exp_LR1E5_SigLIP_224px_Bridge
-    LR_2E5_SIGLIP_224PX_ICY_MX_BRIDGE = Exp_LR2E5_SigLIP_224px_Bridge
+    LR_1E5_SIGLIP_224PX_MX_BRIDGE = Exp_LR1E5_SigLIP_224px_Bridge
+    LR_2E5_SIGLIP_224PX_MX_BRIDGE = Exp_LR2E5_SigLIP_224px_Bridge
+    LR_4E5_SIGLIP_224PX_MX_BRIDGE = Exp_LR4E5_SigLIP_224px_Bridge
+    LR_1E4_SIGLIP_224PX_MX_BRIDGE = Exp_LR1E4_SigLIP_224px_Bridge
+
+    # [03/21] OXE Magic Soup Run
+    SIGLIP_224PX_MX_OXE_MAGIC_SOUP = Exp_SigLIP_224px_OXE_Magic_Soup
+
+    # [03/28] DROID Experiments
+    SIGLIP_224PX_MX_DROID = Exp_SigLIP_224px_DROID
 
     @property
     def vla_id(self) -> str:
