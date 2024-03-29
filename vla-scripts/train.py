@@ -153,6 +153,11 @@ def train(cfg: TrainConfig) -> None:
         shuffle_buffer_size=cfg.vla.shuffle_buffer_size,
     )
 
+    # Save dataset statistics for de-normalization at inference time
+    if overwatch.is_rank_zero():
+        with open(run_dir / "dataset_statistics.json", "w") as f_json:
+            json.dump(vla_dataset.dataset_statistics, f_json, indent=2)
+
     # Create Train Strategy
     overwatch.info(f"Initializing Train Strategy `{cfg.train_strategy}`")
     train_strategy = get_train_strategy(
