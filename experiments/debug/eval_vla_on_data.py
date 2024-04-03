@@ -121,6 +121,7 @@ class ModifiedOpenVLA(OpenVLA):
 
 def load_vla(
     model_path,
+    dataset_name,
     hf_token=None,
     cache_dir=None,
     load_for_training=False,
@@ -147,7 +148,7 @@ def load_vla(
 
     # Load dataset statistics for action de-normalization
     with open(dataset_stats_json, "r") as f:
-        action_norm_stats = json.load(f)["action"]
+        action_norm_stats = json.load(f)[dataset_name]["action"]
 
     # = Load Individual Components necessary for Instantiating a VLM =
     #   =>> Print Minimal Config
@@ -232,7 +233,9 @@ def get_vla(cfg):
     hf_token = cfg.hf_token.read_text().strip() if isinstance(cfg.hf_token, Path) else os.environ[cfg.hf_token]
     # Load VLA checkpoint.
     print(f"Loading VLM from checkpoint: {cfg.pretrained_checkpoint}")
-    vla = load_vla(cfg.pretrained_checkpoint, hf_token=hf_token, load_for_training=False)
+    dataset_name = "bridge_orig"  # TODO (Moo Jin): CHANGE ME BASED ON VLA CONFIG
+    input(f"WARNING: Using dataset statistics for dataset '{dataset_name}'. Press Enter to proceed...")
+    vla = load_vla(cfg.pretrained_checkpoint, dataset_name=dataset_name, hf_token=hf_token, load_for_training=False)
     for param in vla.parameters():
         assert param.dtype == torch.float32, f"Loaded VLM parameter not in full precision: {param}"
     # Cast to half precision.
@@ -380,19 +383,21 @@ def eval_no_teacher_forcing_prompt_builder(batch, vla, action_tokenizer, tokeniz
     )
     image = Image.fromarray(image).convert("RGB")
     # Extract task description.
-    TASK_DESCRIPTION_START_IDX = 34
+    USER_PROMPT_START_IDX = 34
     assert (
-        tokenizer.decode(inputs["input_ids"][0][:TASK_DESCRIPTION_START_IDX])
+        tokenizer.decode(inputs["input_ids"][0][:USER_PROMPT_START_IDX])
         == "<s> A chat between a curious user and an artificial intelligence assistant. "
         "The assistant gives helpful, detailed, and polite answers to the user's questions. USER:"
     )
     assert tokenizer.decode(inputs["input_ids"][0][: -ACTION_DIM - 2])[-10:] == "ASSISTANT:"
     NUM_TOKENS_FOR_ASSISTANT = 7
-    message = tokenizer.decode(
-        inputs["input_ids"][0][TASK_DESCRIPTION_START_IDX : -ACTION_DIM - NUM_TOKENS_FOR_ASSISTANT]
-    )
+    message = tokenizer.decode(inputs["input_ids"][0][USER_PROMPT_START_IDX : -ACTION_DIM - NUM_TOKENS_FOR_ASSISTANT])
+    TASK_DESCRIPTION_START_IDX = 37
+    assert message[:TASK_DESCRIPTION_START_IDX] == "What action should the robot take to "
+    assert message[-1] == "?"
+    task_description = message[TASK_DESCRIPTION_START_IDX:-1]
     # Call `ModifiedOpenVLA.predict_action()` to generate action tokens.
-    action, predicted_action_token_ids = vla.predict_action(image, message, do_sample=False)
+    action, predicted_action_token_ids = vla.predict_action(image, task_description, do_sample=False)
     # Compute action tokens accuracy and L1 loss.
     ground_truth_action_token_ids = inputs["labels"][:, -1 - ACTION_DIM : -1]
     actions_accuracy, l1_loss = compute_actions_accuracy_l1_loss(
