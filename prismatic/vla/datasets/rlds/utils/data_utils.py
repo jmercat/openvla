@@ -271,6 +271,21 @@ def get_dataset_statistics(
     return metadata
 
 
+def save_dataset_statistics(dataset_statistics, run_dir):
+    """Saves a `dataset_statistics.json` file."""
+    out_path = run_dir / "dataset_statistics.json"
+    with open(out_path, "w") as f_json:
+        for _, stats in dataset_statistics.items():
+            for k in stats["action"].keys():
+                stats["action"][k] = stats["action"][k].tolist()
+            for k in stats["proprio"].keys():
+                stats["proprio"][k] = stats["proprio"][k].tolist()
+            stats["num_trajectories"] = stats["num_trajectories"].item()
+            stats["num_transitions"] = stats["num_transitions"].item()
+        json.dump(dataset_statistics, f_json, indent=2)
+    overwatch.info(f"Saved dataset statistics file at path {out_path}")
+
+
 def allocate_threads(n: Optional[int], weights: np.ndarray):
     """
     Allocates an integer number of threads across datasets based on weights.
