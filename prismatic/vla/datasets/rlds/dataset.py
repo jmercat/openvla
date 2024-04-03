@@ -436,8 +436,7 @@ def make_single_dataset(
     dataset = dataset.with_ram_budget(1)
 
     # save for later
-    dataset.dataset_statistics = dataset_statistics
-    return dataset, dataset_statistics["num_trajectories"]
+    return dataset, dataset_statistics["num_trajectories"], dataset_statistics
 
 
 # === Core Initializer ===
@@ -489,11 +488,11 @@ def make_interleaved_dataset(
         raise ValueError("Missing `traj_transform_kwargs` and `frame_transform_kwargs`!")
 
     # Get Dataset Sizes
-    dataset_sizes, all_dataset_statistics = [], []
+    dataset_sizes, all_dataset_statistics = [], {}
     for dataset_kwargs in dataset_kwargs_list:
         _, dataset_statistics = make_dataset_from_rlds(**dataset_kwargs, train=train)
         dataset_sizes.append(dataset_statistics["num_transitions"])
-        all_dataset_statistics.append(dataset_statistics)
+        all_dataset_statistics[dataset_kwargs["name"]] = dataset_statistics
 
     # Get the indices of the "primary" datasets (i.e., datasets with sample_weight == 1.0)
     primary_dataset_indices = np.array([idx for idx in range(len(sample_weights)) if sample_weights[idx] == 1.0])
@@ -518,9 +517,8 @@ def make_interleaved_dataset(
     # Construct Datasets
     overwatch.info("Constructing datasets...")
     datasets = []
-    for dataset_kwargs, dataset_statistics, threads, reads in zip(
+    for dataset_kwargs, threads, reads in zip(
         dataset_kwargs_list,
-        all_dataset_statistics,
         threads_per_dataset,
         reads_per_dataset,
     ):
@@ -529,7 +527,7 @@ def make_interleaved_dataset(
             train=train,
             num_parallel_calls=threads,
             num_parallel_reads=reads,
-            dataset_statistics=dataset_statistics,
+            dataset_statistics=all_dataset_statistics[dataset_kwargs["name"]],
         )
         dataset = apply_trajectory_transforms(
             dataset.repeat(),
@@ -562,7 +560,6 @@ def make_interleaved_dataset(
     dataset = dataset.with_ram_budget(1)
 
     # Save for Later
-    dataset.dataset_statistics = all_dataset_statistics
     dataset.sample_weights = sample_weights
 
-    return dataset, dataset_len
+    return dataset, dataset_len, all_dataset_statistics

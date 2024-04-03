@@ -156,7 +156,7 @@ def train(cfg: TrainConfig) -> None:
 
     # Save dataset statistics for de-normalization at inference time
     if overwatch.is_rank_zero():
-        save_dataset_statistics(vla_dataset.dataset.dataset_statistics, run_dir)
+        save_dataset_statistics(vla_dataset.dataset_statistics, run_dir)
 
     # Create Train Strategy
     overwatch.info(f"Initializing Train Strategy `{cfg.train_strategy}`")
