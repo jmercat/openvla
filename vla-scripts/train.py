@@ -32,6 +32,7 @@ from prismatic.overwatch import initialize_overwatch
 from prismatic.training import VLAMetrics, get_train_strategy
 from prismatic.util import set_global_seed
 from prismatic.vla import get_vla_dataset_and_collator
+from prismatic.vla.datasets.rlds.utils.data_utils import save_dataset_statistics
 
 # Sane Defaults
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -155,8 +156,7 @@ def train(cfg: TrainConfig) -> None:
 
     # Save dataset statistics for de-normalization at inference time
     if overwatch.is_rank_zero():
-        with open(run_dir / "dataset_statistics.json", "w") as f_json:
-            json.dump(vla_dataset.dataset_statistics, f_json, indent=2)
+        save_dataset_statistics(vla_dataset.dataset.dataset_statistics, run_dir)
 
     # Create Train Strategy
     overwatch.info(f"Initializing Train Strategy `{cfg.train_strategy}`")
