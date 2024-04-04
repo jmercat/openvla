@@ -21,7 +21,7 @@ import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Sequence, Union
+from typing import List, Union
 
 import draccus
 import matplotlib.gridspec as gridspec
@@ -29,10 +29,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import tqdm
-import wandb
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from torch.utils.data import DataLoader
 
+import wandb
 from prismatic.conf import VLAConfig, VLARegistry
 from prismatic.models import load_vla
 from prismatic.models.vlms import OpenVLA, PrismaticVLM
@@ -62,7 +62,7 @@ class VisualizeConfig:
     eval_samples: int = 1024                                    # Number of samples used for computing eval stats
     eval_episodes: int = 5                                      # Number of episodes visualized in episode vis
     max_episode_steps: int = 80                                 # Max steps visualized in episode visualizations
-    eval_datasets: Sequence = ()                                # Which individual datasets to run visualization on
+    eval_datasets: List[str] = field(default_factory=list)      # Which individual datasets to run visualization on
 
     # Model params
     action_dim: int = 7
