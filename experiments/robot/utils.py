@@ -4,6 +4,7 @@ import os
 import sys
 import time
 from collections import defaultdict
+from functools import partial
 from pathlib import Path
 
 import imageio
@@ -20,12 +21,13 @@ from experiments.robot.widowx_real_env import JaxRLWidowXEnv
 
 # Initialize important constants and pretty-printing mode in NumPy.
 ACTION_DIM = 7
+BRIDGE_PROPRIO_DIM = 7
 DATE_TIME = time.strftime("%Y_%m_%d-%H_%M_%S")
 DEVICE = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
 np.set_printoptions(formatter={"float": lambda x: "{0:0.2f}".format(x)})
 
 
-def get_widowx_env():
+def get_widowx_env(cfg, model=None):
     """Get WidowX control environment."""
 
     class AttrDict(defaultdict):
@@ -37,18 +39,29 @@ def get_widowx_env():
     env_params = {
         "fix_zangle": True,  # do not apply random rotations to start state
         "move_duration": 0.2,
-        "adaptive_wait": True,
+        "adaptive_wait": False,
         "move_to_rand_start_freq": 1,
         "override_workspace_boundaries": [[0.1, -0.25, 0.095, -1.57, 0], [0.4, 0.25, 0.4, 1.57, 0]],
         "action_clipping": "xyz",
         "catch_environment_except": True,
-        "add_states": variant.add_states,
+        "add_states": True,
         "from_states": variant.from_states,
         "reward_type": variant.reward_type,
         "start_transform": None,
         "randomize_initpos": "full_area",
     }
     env = JaxRLWidowXEnv(env_params)
+    # For Octo, wrap the environment so that the observations contain necessary keys (e.g. `pad_mask`).
+    if cfg.model_family == "octo":
+        from octo.utils.gym_wrappers import (
+            HistoryWrapper,
+            TemporalEnsembleWrapper,
+            UnnormalizeActionProprio,
+        )
+
+        env = UnnormalizeActionProprio(env, model.dataset_statistics["bridge_dataset"], normalization_type="normal")
+        env = HistoryWrapper(env, horizon=1)
+        env = TemporalEnsembleWrapper(env, pred_horizon=1)
     return env
 
 
@@ -92,7 +105,9 @@ def get_model(cfg):
     if cfg.model_family == "llava":
         model = get_vla(cfg)
     elif cfg.model_family == "octo":
-        model = None  # TODO
+        from octo.model.octo_model import OctoModel
+
+        model = OctoModel.load_pretrained("hf://rail-berkeley/octo-base")
     else:
         raise ValueError("Unexpected `model_family` found in config.")
     return model
@@ -130,13 +145,54 @@ def get_image(obs, resize_size):
     # NOTE (Moo Jin): Yes, we resize down to 256x256 first even though the image may end up being
     # resized up to a different resolution by some models. This is just so that we're in-distribution
     # w.r.t. the original preprocessing at train time.
-    img = obs["pixels"][0]
+    img = np.squeeze(obs["image_primary"])
     img = Image.fromarray(img)
     BRIDGE_ORIG_IMG_SIZE = 256
     img = img.resize((BRIDGE_ORIG_IMG_SIZE, BRIDGE_ORIG_IMG_SIZE), Image.Resampling.LANCZOS)
     img = img.resize((resize_size, resize_size), Image.Resampling.LANCZOS)  # also resize to size seen at train time
     img = img.convert("RGB")
     return img
+
+
+def get_octo_policy_function(model):
+    """Returns a JAX JIT-compiled Octo policy function."""
+    import jax
+
+    # create policy function
+    @jax.jit
+    def sample_actions(
+        pretrained_model,
+        observations,
+        tasks,
+        rng,
+    ):
+        # add batch dim to observations
+        observations = jax.tree_map(lambda x: x[None], observations)
+        actions = pretrained_model.sample_actions(
+            observations,
+            tasks,
+            rng=rng,
+        )
+        # remove batch dim
+        return actions[0]
+
+    def supply_rng(f, rng):
+        def wrapped(*args, **kwargs):
+            nonlocal rng
+            rng, key = jax.random.split(rng)
+            return f(*args, rng=key, **kwargs)
+
+        return wrapped
+
+    policy_fn = supply_rng(
+        partial(
+            sample_actions,
+            model,
+        ),
+        rng=jax.random.PRNGKey(0),
+    )
+
+    return policy_fn
 
 
 def get_vla_action(vla, image, task_label):
@@ -146,13 +202,26 @@ def get_vla_action(vla, image, task_label):
     return action
 
 
-def get_action(cfg, model, image, task_label):
+def get_octo_action(model, image, task_label, policy_function, obs):
+    """Generates an action with the Octo policy."""
+    assert image.size[0] == image.size[1]
+    task = model.create_tasks(texts=[task_label])
+    obs = {
+        "image_primary": np.expand_dims(np.array(image), axis=0),
+        "proprio": obs["proprio"],
+        "pad_mask": obs["pad_mask"],
+    }
+    action = np.array(policy_function(obs, task), dtype=np.float64)
+    return action
+
+
+def get_action(cfg, model, image, task_label, policy_function=None, obs=None):
     """Queries the model to get an action."""
     if cfg.model_family == "llava":
         action = get_vla_action(model, image, task_label)
+        assert action.shape == (ACTION_DIM,)
     elif cfg.model_family == "octo":
-        action = None  # TODO
+        action = get_octo_action(model, image, task_label, policy_function, obs)
     else:
         raise ValueError("Unexpected `model_family` found in config.")
-    assert action.shape == (ACTION_DIM,)
     return action

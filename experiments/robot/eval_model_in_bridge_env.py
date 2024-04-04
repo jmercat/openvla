@@ -32,6 +32,7 @@ from experiments.robot.utils import (
     get_image_resize_size,
     get_model,
     get_next_task_label,
+    get_octo_policy_function,
     get_widowx_env,
     save_rollout_gif,
 )
@@ -77,8 +78,12 @@ def main(cfg: GenerateConfig) -> None:
     resize_size = get_image_resize_size(cfg)
     # Load model.
     model = get_model(cfg)
+    # (For Octo) Create JAX JIT-compiled policy function.
+    policy_fn = None
+    if cfg.model_family == "octo":
+        policy_fn = get_octo_policy_function(model)
     # Initialize the WidowX environment.
-    env = get_widowx_env()
+    env = get_widowx_env(cfg, model)
     # Start evaluation.
     task_label = ""
     episode_idx = 0
@@ -87,7 +92,7 @@ def main(cfg: GenerateConfig) -> None:
         task_label = get_next_task_label(task_label)
         rollout_images = []
         # Reset environment.
-        env.reset()
+        obs, _ = env.reset()
         env.start()
         # Setup.
         t = 0
@@ -98,16 +103,17 @@ def main(cfg: GenerateConfig) -> None:
         last_tstamp = time.time()
         while t < cfg.max_steps:
             try:
-                # Get environment observations.
-                obs = env._get_obs()
-                rollout_images.append(obs["pixels"][0])
                 if time.time() > last_tstamp + step_duration:
                     print(f"t: {t}")
                     last_tstamp = time.time()
+                    # Refresh the camera image.
+                    obs["image_primary"] = env.get_observation()["image_primary"]
+                    # Save image for rollout GIF.
+                    rollout_images.append(np.squeeze(obs["image_primary"]))
                     # Get preprocessed image.
                     img = get_image(obs, resize_size)
                     # Query model to get action.
-                    action = get_action(cfg, model, img, task_label)
+                    action = get_action(cfg, model, img, task_label, policy_fn, obs)
                     # End episode early if the robot doesn't move at all for a few consecutive steps.
                     if np.isclose(np.linalg.norm(action), 1, atol=0.01) and np.linalg.norm(action[:6]) < 0.01:
                         zero_action_count += 1
@@ -117,9 +123,8 @@ def main(cfg: GenerateConfig) -> None:
                     else:
                         zero_action_count = 0
                     # Execute action in environment.
-                    tstamp_return_obs = last_tstamp + step_duration
                     print("action:", action)
-                    _, _, _, _ = env.step({"action": action, "tstamp_return_obs": tstamp_return_obs})
+                    obs, _, _, _, _ = env.step(action)
                     t += 1
             except Exception as e:
                 print(f"Caught exception: {e}")

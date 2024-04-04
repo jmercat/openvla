@@ -27,7 +27,9 @@ class JaxRLWidowXEnv(WidowXEnv):
 
         obs_dict = {}
         if not self._hp.from_states:
-            obs_dict["pixels"] = Box(low=0, high=255, shape=(self.image_height, self.image_width, 3), dtype=np.uint8)
+            obs_dict["image_primary"] = Box(
+                low=0, high=255, shape=(self.image_height, self.image_width, 3), dtype=np.uint8
+            )
         if self._hp.add_states:
             obs_dict["state"] = Box(low=-100000, high=100000, shape=(7,), dtype=np.float32)
         if self._hp.add_task_id:
@@ -61,7 +63,8 @@ class JaxRLWidowXEnv(WidowXEnv):
         if itraj is None:
             itraj = self.traj_counter
         self.traj_counter += 1
-        return super().reset(itraj, reset_state)
+        info = {}
+        return super().reset(itraj, reset_state), info
 
     def _get_processed_image(self, image=None):
         from skimage.transform import resize
@@ -72,14 +75,15 @@ class JaxRLWidowXEnv(WidowXEnv):
         return downsampled_trimmed_image
 
     def step(self, action):
-        obs = super().step(action["action"].squeeze(), action["tstamp_return_obs"], blocking=False)
+        obs = super().step(action.squeeze(), blocking=False)
         reward = 0
         done = obs["full_obs"]["env_done"]  # done can come from VR buttons
+        truncated = False
         info = {}
         if self.move_except:
             done = True
             info["Error.truncated"] = True
-        return obs, reward, done, info
+        return obs, reward, done, truncated, info
 
     def disable_render(self):
         self.do_render = False
@@ -92,11 +96,20 @@ class JaxRLWidowXEnv(WidowXEnv):
         obs = {}
         if self.do_render:
             processed_images = np.stack([self._get_processed_image(im) for im in full_obs["images"]], axis=0)
-            obs["pixels"] = processed_images
+            obs["image_primary"] = processed_images
         obs["full_obs"] = full_obs
+        # (Only for Octo) Get proprioceptive state in observations.
         if self._hp.add_states:
-            obs["state"] = self.get_full_state()[None]
+            obs["proprio"] = self.get_full_state()
+            # For some reason, the Octo codebase expects 8-D proprio
+            # instead of 7-D. The 7th dimension in the 8-D Octo proprio state
+            # is always 0. So we add this 0 value at the 7th dimension to avoid
+            # runtime error.
+            obs["proprio"] = np.insert(obs["proprio"], -1, 0)
         return obs
+
+    def get_observation(self):
+        return self._get_obs()
 
     def set_task_id(self, task_id):
         self.task_id = task_id
