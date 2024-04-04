@@ -83,7 +83,7 @@ class OpenVLA(PrismaticVLM):
             # fmt: on
 
         # Extract predicted action tokens and translate into (normalized) continuous actions
-        predicted_action_token_ids = generated_ids[:, -self.action_dim :]
+        predicted_action_token_ids = generated_ids[0, -self.action_dim :]
         normalized_actions = self.action_tokenizer.decode_token_ids_to_actions(predicted_action_token_ids.cpu().numpy())
 
         # Unnormalize actions

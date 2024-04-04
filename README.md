@@ -302,6 +302,29 @@ AttributeError: 'DLataset' object has no attribute 'traj_map'. Did you mean: 'fl
 - **Fix**: Upgrade `dlimp` to the newest version. You may have to `--force-reinstall` like so:
 `pip install --no-deps --force-reinstall git+https://github.com/kvablack/dlimp@ad72ce3a9b414db2185bc0b38461d4101a65477a`
 
+
+---
+
+## Evaluating VLAs
+
+### Bridge V2 Evals
+
+On `iris-ws-18`, run the following commands:
+```
+source /iris/u/moojink/.openvla_widowx_profile
+sudo v4l2-ctl --list-devices
+/iris/u/moojink/widowx_control/scripts/run.sh -v 0 # *** CHANGE THE CAMERA INDEX BASED ON ABOVE OUTPUT ***
+```
+NOTE: The second command will print a list of the cameras that the workstation has access to, like `/dev/video0` and `/dev/video1`. If you don't see any cameras, they might not be connected to the workstation. Let's say you want to use the camera labeled as `/dev/video1`. Then, run the command below to launch the WidowX control stack (I like to do this in a tmux session). The `-v 1` arg tells the launcher script that you want the camera at index `1` to be mapped to `camera0` in the robot infrastructure code. If you want to use `/dev/video0` instead of `/dev/video1`, then you would use the argument `-v 0`.
+
+Now, in another Terminal, run the commands below. Modify args as needed.
+```
+source /iris/u/moojink/.openvla_widowx_profile
+python experiments/robot/eval_vla_on_bridge_env.py \
+    --model.type <VLM_TYPE> \
+    --pretrained_checkpoint <CHECKPOINT_PATH>
+```
+
 ---
 
 ## Repository Structure

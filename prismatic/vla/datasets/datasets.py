@@ -132,7 +132,7 @@ class RLDSDataset(IterableDataset):
         # fmt: on
 
         # Initialize RLDS Dataset
-        self.dataset, self.dataset_length = self.make_dataset(rlds_config)
+        self.dataset, self.dataset_length, self.dataset_statistics = self.make_dataset(rlds_config)
 
     def make_dataset(self, rlds_config):
         return make_interleaved_dataset(**rlds_config)
