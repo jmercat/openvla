@@ -43,8 +43,8 @@ class VLAServerConfig:
     # fmt: off
     # Pre-trained VLA model checkpoint to serve
     checkpoint_path: Union[str, Path] = Path(
-        "/shared/karl/models/open_vla/lr-2e5+siglip-224px+mx-bridge+n1+b32+x7/"
-        "checkpoints/step-080000-epoch-09-loss=0.0987.pt"
+        "/shared/karl/models/open_vla/siglip-224px+mx-oxe-magic-soup+n8+b32+x7/"
+        "checkpoints/step-152500-epoch-27-loss=0.1637.pt"
     )
 
     # Server configuration
@@ -64,7 +64,7 @@ class OpenVLAServer:
     """A simple server for OpenVLA policies.
 
     Use /act to predict an action for a given image + instruction.
-        - Takes in {'image': np.ndarray, 'instruction': str}
+        - Takes in {'image': np.ndarray, 'instruction': str, 'unnorm_key': optional(str)}
         - Returns {'action': np.ndarray}
     """
 
@@ -87,14 +87,17 @@ class OpenVLAServer:
         try:
             image = payload["image"]
             instruction = payload["instruction"]
-            action = self.vla.predict_action(Image.fromarray(image).convert("RGB"), instruction)
+            unnorm_key = payload.get("unnorm_key")
+            action = self.vla.predict_action(Image.fromarray(image).convert("RGB"), instruction, unnorm_key)
             return JSONResponse(action)
         except:  # noqa: E722        # blanket except to robustify against external errors
             logging.error(traceback.format_exc())
             logging.warning(
                 "Your request threw an error. "
                 "Make sure your request complies with the expected format: \n"
-                "{'image': np.ndarray, 'instruction': str}"
+                "{'image': np.ndarray, 'instruction': str} \n"
+                "You can optionally add an `unnorm_key: str` to specify the dataset stats you want to use "
+                "for un-normalizing the output actions."
             )
             return "error"
 

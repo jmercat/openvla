@@ -119,7 +119,6 @@ def load(
 # === Load Pretrained VLA Model ===
 def load_vla(
     model_path: Union[str, Path],
-    dataset_name: str,
     hf_token: Optional[str] = None,
     cache_dir: Optional[Union[str, Path]] = None,
     load_for_training: bool = False,
@@ -146,7 +145,7 @@ def load_vla(
 
     # Load dataset statistics for action de-normalization
     with open(dataset_stats_json, "r") as f:
-        action_norm_stats = json.load(f)[dataset_name]["action"]
+        norm_stats = json.load(f)
 
     # = Load Individual Components necessary for Instantiating a VLM =
     #   =>> Print Minimal Config
@@ -186,7 +185,7 @@ def load_vla(
         llm_backbone,
         arch_specifier=model_cfg.arch_specifier,
         freeze_weights=not load_for_training,
-        action_norm_stats=action_norm_stats,
+        norm_stats=norm_stats,
         action_tokenizer=action_tokenizer,
     )
 

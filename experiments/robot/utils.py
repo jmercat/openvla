@@ -76,7 +76,7 @@ def get_vla(cfg):
     set_seed(cfg.seed)
     # Load VLA checkpoint.
     print(f"Loading VLM from checkpoint: {cfg.pretrained_checkpoint}")
-    vla = load_vla(cfg.pretrained_checkpoint, dataset_name="bridge_orig", hf_token=hf_token, load_for_training=False)
+    vla = load_vla(cfg.pretrained_checkpoint, hf_token=hf_token, load_for_training=False)
     for param in vla.parameters():
         assert param.dtype == torch.float32, f"Loaded VLM parameter not in full precision: {param}"
     # Cast to half precision.
@@ -142,7 +142,7 @@ def get_image(obs, resize_size):
 def get_vla_action(vla, image, task_label):
     """Generates an action with the VLA policy."""
     assert image.size[0] == image.size[1]
-    action = vla.predict_action(image, task_label, do_sample=False)
+    action = vla.predict_action(image, task_label, unnorm_key="bridge_orig", do_sample=False)
     return action
 
 
