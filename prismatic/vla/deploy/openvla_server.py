@@ -6,6 +6,7 @@ On client (for server running on 0.0.0.0:8000):
     import requests
     import json_numpy
     json_numpy.patch()
+    import numpy as np
 
     action = requests.post(
         "http://0.0.0.0:8000/act",
@@ -13,7 +14,7 @@ On client (for server running on 0.0.0.0:8000):
     ).json()
 
 If your server is not reachable from the open internet, you can forward ports to your client via ssh:
-    ssh -L 8000:128.32.162.191:8000 ssh karl@128.32.162.191
+    ssh -L 8000:localhost:8000 ssh karl@128.32.162.191
 """
 
 
