@@ -25,8 +25,8 @@ import numpy as np
 
 from prismatic.conf import ModelConfig, ModelRegistry
 
-sys.path.append("./")  # hack so that the interpreter can find experiments.robot
-from experiments.robot.utils import (
+sys.path.append("../../")  # hack so that the interpreter can find experiments.robot
+from experiments.robot.bridge.utils import (
     get_action,
     get_image,
     get_image_resize_size,

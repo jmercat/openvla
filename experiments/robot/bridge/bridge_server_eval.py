@@ -16,7 +16,7 @@ import json_numpy
 import numpy as np
 import requests
 from PIL import Image
-from widowx_env import WidowXGym
+from widowx_berkeley_env import WidowXGym
 from widowx_envs.widowx_env_service import WidowXClient, WidowXConfigs
 
 json_numpy.patch()

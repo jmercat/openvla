@@ -320,7 +320,7 @@ NOTE: The second command will print a list of the cameras that the workstation h
 Now, in another Terminal, run the commands below. Modify args as needed.
 ```
 source /iris/u/moojink/.openvla_widowx_profile
-python experiments/robot/eval_vla_on_bridge_env.py \
+python experiments/robot/bridge/bridge_eval.py \
     --model.type <VLM_TYPE> \
     --pretrained_checkpoint <CHECKPOINT_PATH>
 ```

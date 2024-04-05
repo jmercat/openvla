@@ -15,8 +15,8 @@ from PIL import Image
 from prismatic.models import load_vla
 from prismatic.models.materialize import VISION_BACKBONES
 
-sys.path.append("./")  # hack so that the interpreter can find widowx_real_env
-from experiments.robot.widowx_real_env import JaxRLWidowXEnv
+sys.path.append("../../")  # hack so that the interpreter can find widowx_real_env
+from experiments.robot.bridge.widowx_stanford_env import JaxRLWidowXEnv
 
 # Initialize important constants and pretty-printing mode in NumPy.
 ACTION_DIM = 7
