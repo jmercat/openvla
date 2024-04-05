@@ -123,14 +123,14 @@ def save_rollout_gif(rollout_images, idx):
     print(f"Saved rollout GIF at path {gif_path}")
 
 
-def get_image(obs, resize_size):
+def get_image(obs, resize_size, key="pixels"):
     """Extracts image from observations and preprocesses it."""
     # Preprocess the image the exact same way that the Berkeley Bridge folks did it
     # to minimize distribution shift.
     # NOTE (Moo Jin): Yes, we resize down to 256x256 first even though the image may end up being
     # resized up to a different resolution by some models. This is just so that we're in-distribution
     # w.r.t. the original preprocessing at train time.
-    img = obs["pixels"][0]
+    img = obs[key][0]
     img = Image.fromarray(img)
     BRIDGE_ORIG_IMG_SIZE = 256
     img = img.resize((BRIDGE_ORIG_IMG_SIZE, BRIDGE_ORIG_IMG_SIZE), Image.Resampling.LANCZOS)
