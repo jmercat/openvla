@@ -25,7 +25,7 @@ class VLADroidEvalConfig:
 
     # Environment parameters
     img_size: int = 224                         # Image resolution for VLA vision backbone
-    camera_key: str = "26638268_left"           # Key for retrieving camera observation
+    camera_key: str = "24514023_left"           # Key for retrieving camera observation
 
     # Misc
     verbose: bool = False                       # Whether to print out debug info
@@ -63,7 +63,7 @@ class OpenVLAPolicy:
 
         # Convert R6 rotation to euler & absolute gripper action to relative
         rot_act_euler = R6_to_euler(action[3:9])
-        relative_gripper_act = action[-1] - observation["robot_state"]["gripper_position"]
+        relative_gripper_act = action[-1:] - observation["robot_state"]["gripper_position"]
         action = np.concatenate(
             (
                 action[:3],
@@ -84,7 +84,7 @@ class OpenVLAPolicy:
 
 
 @draccus.wrap()
-def run_droid_eval(cfg):
+def run_droid_eval(cfg: VLADroidEvalConfig):
     policy = OpenVLAPolicy(cfg)
     EvalGUI(policy=policy)
 
