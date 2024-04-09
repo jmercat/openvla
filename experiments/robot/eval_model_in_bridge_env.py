@@ -18,7 +18,7 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Union
+from typing import Dict, List, Union
 
 import draccus
 import numpy as np
@@ -56,9 +56,20 @@ class GenerateConfig:
     )
 
     # Environment-specific variables
-    max_episodes = 50                                           # Maximum number of rollouts
-    max_steps = 50                                              # Maximum number of steps per rollout
-    control_frequency = 5                                       # Robot control frequency in Hz
+    host_ip: str = "localhost"
+    port: int = 5556
+    init_ee_pos: List[float] = field(default_factory=lambda: [0.3, -0.09, 0.26])
+    init_ee_quat: List[float] = field(default_factory=lambda: [0, -0.259, 0, -0.966])  # 30 degree offset more natural
+    bounds: List[List[float]] = field(default_factory=lambda: [
+            [0.1, -0.20, -0.01, -1.57, 0],
+            [0.45, 0.25, 0.30, 1.57, 0],
+        ]
+    )
+    camera_topics: List[Dict[str, str]] = field(default_factory=lambda: [{"name": "/blue/image_raw"}])
+    blocking: bool = False
+    max_episodes: int = 50
+    max_steps: int = 60
+    control_frequency: int = 5
 
     # Training stage (doesn't matter here, but the loading function expects the argument)
     stage: str = "vla-finetune"
@@ -83,7 +94,7 @@ def main(cfg: GenerateConfig) -> None:
     if cfg.model_family == "octo":
         policy_fn = get_octo_policy_function(model)
     # Initialize the WidowX environment.
-    env = get_widowx_env(cfg, model)
+    env = get_widowx_env(cfg, resize_size, model)
     # Start evaluation.
     task_label = ""
     episode_idx = 0
@@ -93,7 +104,6 @@ def main(cfg: GenerateConfig) -> None:
         rollout_images = []
         # Reset environment.
         obs, _ = env.reset()
-        env.start()
         # Setup.
         t = 0
         zero_action_count = 0
@@ -103,8 +113,10 @@ def main(cfg: GenerateConfig) -> None:
         last_tstamp = time.time()
         while t < cfg.max_steps:
             try:
-                if time.time() > last_tstamp + step_duration:
+                curr_tstamp = time.time()
+                if curr_tstamp > last_tstamp + step_duration:
                     print(f"t: {t}")
+                    print(f"Previous step elapsed time (sec): {curr_tstamp - last_tstamp:.2f}")
                     last_tstamp = time.time()
                     # Refresh the camera image.
                     obs["image_primary"] = env.get_observation()["image_primary"]

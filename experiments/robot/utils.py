@@ -3,7 +3,6 @@
 import os
 import sys
 import time
-from collections import defaultdict
 from functools import partial
 from pathlib import Path
 
@@ -12,12 +11,13 @@ import numpy as np
 import torch
 from accelerate.utils import set_seed
 from PIL import Image
+from widowx_envs.widowx_env_service import WidowXClient, WidowXConfigs
 
 from prismatic.models import load_vla
 from prismatic.models.materialize import VISION_BACKBONES
 
-sys.path.append("./")  # hack so that the interpreter can find widowx_real_env
-from experiments.robot.widowx_real_env import JaxRLWidowXEnv
+sys.path.append("./")  # hack so that the interpreter can find experiments.robot
+from experiments.robot.widowx_env import WidowXGym
 
 # Initialize important constants and pretty-printing mode in NumPy.
 ACTION_DIM = 7
@@ -27,31 +27,22 @@ DEVICE = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("
 np.set_printoptions(formatter={"float": lambda x: "{0:0.2f}".format(x)})
 
 
-def get_widowx_env(cfg, model=None):
+def get_widowx_env(cfg, resize_size, model=None):
     """Get WidowX control environment."""
-
-    class AttrDict(defaultdict):
-        __slots__ = ()
-        __getattr__ = dict.__getitem__
-        __setattr__ = dict.__setitem__
-
-    variant = AttrDict(lambda: False)
-    env_params = {
-        "fix_zangle": True,  # do not apply random rotations to start state
-        "move_duration": 0.2,
-        "adaptive_wait": False,
-        "move_to_rand_start_freq": 1,
-        "override_workspace_boundaries": [[0.1, -0.25, 0.095, -1.57, 0], [0.4, 0.25, 0.4, 1.57, 0]],
-        "action_clipping": "xyz",
-        "catch_environment_except": True,
-        "add_states": True,
-        "from_states": variant.from_states,
-        "reward_type": variant.reward_type,
-        "start_transform": None,
-        "randomize_initpos": "full_area",
-    }
-    env = JaxRLWidowXEnv(env_params)
-    # For Octo, wrap the environment so that the observations contain necessary keys (e.g. `pad_mask`).
+    # Set up the widowx client.
+    start_state = np.concatenate([cfg.init_ee_pos, cfg.init_ee_quat])
+    env_params = WidowXConfigs.DefaultEnvParams.copy()
+    env_params["override_workspace_boundaries"] = cfg.bounds
+    env_params["camera_topics"] = cfg.camera_topics
+    env_params["start_state"] = list(start_state)
+    widowx_client = WidowXClient(host=cfg.host_ip, port=cfg.port)
+    widowx_client.init(env_params, image_size=resize_size)
+    env = WidowXGym(
+        widowx_client,
+        im_size=resize_size,
+        blocking=cfg.blocking,
+    )
+    # (For Octo only) Wrap the robot environment.
     if cfg.model_family == "octo":
         from octo.utils.gym_wrappers import (
             HistoryWrapper,
