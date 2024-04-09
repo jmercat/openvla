@@ -10,8 +10,11 @@ Usage:
         --pretrained_checkpoint <CHECKPOINT_PATH>
 
     # Octo:
-    python experiments/robot/eval_model_in_bridge_env.py \
-        --model_family octo
+    python experiments/robot/eval_model_in_bridge_env.py --model_family octo
+
+    # RT-1-X:
+    python experiments/robot/eval_model_in_bridge_env.py --model_family rt_1_x \
+        --pretrained_checkpoint <CHECKPOINT_PATH>
 """
 
 import sys
@@ -28,12 +31,13 @@ from prismatic.conf import ModelConfig, ModelRegistry
 sys.path.append("./")  # hack so that the interpreter can find experiments.robot
 from experiments.robot.utils import (
     get_action,
-    get_image,
     get_image_resize_size,
     get_model,
     get_next_task_label,
     get_octo_policy_function,
+    get_preprocessed_image,
     get_widowx_env,
+    refresh_obs,
     save_rollout_gif,
 )
 
@@ -43,7 +47,7 @@ class GenerateConfig:
     # fmt: off
     model_family: str = "llava"
 
-    # Pre-trained VLA model checkpoint to load
+    # Pre-trained model checkpoint to load
     pretrained_checkpoint: Union[str, Path] = Path(
         "/scr/moojink/checkpoints/tri/reproduction-llava-v15+mx-bridge+n1+b32+x7/checkpoints/step-077500-epoch-00-loss=0.0488.pt"
     )
@@ -94,7 +98,7 @@ def main(cfg: GenerateConfig) -> None:
     if cfg.model_family == "octo":
         policy_fn = get_octo_policy_function(model)
     # Initialize the WidowX environment.
-    env = get_widowx_env(cfg, resize_size, model)
+    env = get_widowx_env(cfg, model)
     # Start evaluation.
     task_label = ""
     episode_idx = 0
@@ -118,14 +122,17 @@ def main(cfg: GenerateConfig) -> None:
                     print(f"t: {t}")
                     print(f"Previous step elapsed time (sec): {curr_tstamp - last_tstamp:.2f}")
                     last_tstamp = time.time()
-                    # Refresh the camera image.
-                    obs["image_primary"] = env.get_observation()["image_primary"]
+                    # Refresh the camera image and proprio state.
+                    obs = refresh_obs(obs, env)
                     # Save image for rollout GIF.
-                    rollout_images.append(np.squeeze(obs["image_primary"]))
+                    if len(obs["full_image"].shape) == 4:  # obs with history
+                        rollout_images.append(obs["full_image"][-1])
+                    else:  # obs with no history
+                        rollout_images.append(obs["full_image"])
                     # Get preprocessed image.
-                    img = get_image(obs, resize_size)
+                    obs["full_image"] = get_preprocessed_image(obs, resize_size)
                     # Query model to get action.
-                    action = get_action(cfg, model, img, task_label, policy_fn, obs)
+                    action = get_action(cfg, model, obs, task_label, policy_fn)
                     # End episode early if the robot doesn't move at all for a few consecutive steps.
                     if np.isclose(np.linalg.norm(action), 1, atol=0.01) and np.linalg.norm(action[:6]) < 0.01:
                         zero_action_count += 1

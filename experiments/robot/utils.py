@@ -27,7 +27,7 @@ DEVICE = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("
 np.set_printoptions(formatter={"float": lambda x: "{0:0.2f}".format(x)})
 
 
-def get_widowx_env(cfg, resize_size, model=None):
+def get_widowx_env(cfg, model=None):
     """Get WidowX control environment."""
     # Set up the widowx client.
     start_state = np.concatenate([cfg.init_ee_pos, cfg.init_ee_quat])
@@ -35,11 +35,11 @@ def get_widowx_env(cfg, resize_size, model=None):
     env_params["override_workspace_boundaries"] = cfg.bounds
     env_params["camera_topics"] = cfg.camera_topics
     env_params["start_state"] = list(start_state)
+    env_params["return_full_image"] = True
     widowx_client = WidowXClient(host=cfg.host_ip, port=cfg.port)
-    widowx_client.init(env_params, image_size=resize_size)
+    widowx_client.init(env_params)
     env = WidowXGym(
         widowx_client,
-        im_size=resize_size,
         blocking=cfg.blocking,
     )
     # (For Octo only) Wrap the robot environment.
@@ -51,8 +51,8 @@ def get_widowx_env(cfg, resize_size, model=None):
         )
 
         env = UnnormalizeActionProprio(env, model.dataset_statistics["bridge_dataset"], normalization_type="normal")
-        env = HistoryWrapper(env, horizon=1)
-        env = TemporalEnsembleWrapper(env, pred_horizon=1)
+        env = HistoryWrapper(env, horizon=2)
+        env = TemporalEnsembleWrapper(env, pred_horizon=4)
     return env
 
 
@@ -67,6 +67,8 @@ def get_image_resize_size(cfg) -> int:
         resize_size = get_vla_image_resize_size(cfg.model.vision_backbone_id)
     elif cfg.model_family == "octo":
         resize_size = 256
+    elif cfg.model_family == "rt_1_x":
+        pass  # TODO
     else:
         raise ValueError("Unexpected `model_family` found in config.")
     return resize_size
@@ -99,6 +101,10 @@ def get_model(cfg):
         from octo.model.octo_model import OctoModel
 
         model = OctoModel.load_pretrained("hf://rail-berkeley/octo-base")
+    elif cfg.model_family == "rt_1_x":
+        from experiments.baselines.rt_1_x.rt_1_x_policy import RT1XPolicy
+
+        model = RT1XPolicy(saved_model_path=cfg.pretrained_checkpoint)
     else:
         raise ValueError("Unexpected `model_family` found in config.")
     return model
@@ -129,20 +135,35 @@ def save_rollout_gif(rollout_images, idx):
     print(f"Saved rollout GIF at path {gif_path}")
 
 
-def get_image(obs, resize_size):
+def resize_image(img, resize_size):
+    """Takes numpy array corresponding to a single image and returns resized image as numpy array."""
+    img = Image.fromarray(img)
+    BRIDGE_ORIG_IMG_SIZE = 256
+    img = img.resize((BRIDGE_ORIG_IMG_SIZE, BRIDGE_ORIG_IMG_SIZE), Image.Resampling.LANCZOS)
+    img = img.resize((resize_size, resize_size), Image.Resampling.LANCZOS)  # also resize to size seen at train time
+    img = img.convert("RGB")
+    img = np.array(img)
+    return img
+
+
+def get_preprocessed_image(obs, resize_size):
     """Extracts image from observations and preprocesses it."""
     # Preprocess the image the exact same way that the Berkeley Bridge folks did it
     # to minimize distribution shift.
     # NOTE (Moo Jin): Yes, we resize down to 256x256 first even though the image may end up being
     # resized up to a different resolution by some models. This is just so that we're in-distribution
     # w.r.t. the original preprocessing at train time.
-    img = np.squeeze(obs["image_primary"])
-    img = Image.fromarray(img)
-    BRIDGE_ORIG_IMG_SIZE = 256
-    img = img.resize((BRIDGE_ORIG_IMG_SIZE, BRIDGE_ORIG_IMG_SIZE), Image.Resampling.LANCZOS)
-    img = img.resize((resize_size, resize_size), Image.Resampling.LANCZOS)  # also resize to size seen at train time
-    img = img.convert("RGB")
-    return img
+    if len(obs["full_image"].shape) == 4:  # history included
+        num_images_in_history = obs["full_image"].shape[0]
+        new_images = np.zeros(
+            (num_images_in_history, resize_size, resize_size, obs["full_image"].shape[-1]), dtype=np.uint8
+        )
+        for i in range(num_images_in_history):
+            new_images[i] = resize_image(obs["full_image"][i], resize_size)
+        obs["full_image"] = new_images
+    else:  # no history
+        obs["full_image"] = resize_image(obs["full_image"], resize_size)
+    return obs["full_image"]
 
 
 def get_octo_policy_function(model):
@@ -186,33 +207,51 @@ def get_octo_policy_function(model):
     return policy_fn
 
 
-def get_vla_action(vla, image, task_label):
+def get_vla_action(vla, obs, task_label):
     """Generates an action with the VLA policy."""
+    image = Image.fromarray(obs["full_image"])
+    image = image.convert("RGB")
     assert image.size[0] == image.size[1]
     action = vla.predict_action(image, task_label, do_sample=False)
     return action
 
 
-def get_octo_action(model, image, task_label, policy_function, obs):
+def get_octo_action(model, obs, task_label, policy_function):
     """Generates an action with the Octo policy."""
-    assert image.size[0] == image.size[1]
     task = model.create_tasks(texts=[task_label])
     obs = {
-        "image_primary": np.expand_dims(np.array(image), axis=0),
-        "proprio": obs["proprio"],
+        "image_primary": obs["full_image"],
+        # "proprio": obs["proprio"], <-- Octo paper says proprio makes performance worse
         "pad_mask": obs["pad_mask"],
     }
     action = np.array(policy_function(obs, task), dtype=np.float64)
     return action
 
 
-def get_action(cfg, model, image, task_label, policy_function=None, obs=None):
+def get_action(cfg, model, obs, task_label, policy_function=None):
     """Queries the model to get an action."""
     if cfg.model_family == "llava":
-        action = get_vla_action(model, image, task_label)
+        action = get_vla_action(model, obs, task_label)
         assert action.shape == (ACTION_DIM,)
     elif cfg.model_family == "octo":
-        action = get_octo_action(model, image, task_label, policy_function, obs)
+        action = get_octo_action(model, obs, task_label, policy_function)
+    elif cfg.model_family == "rt_1_x":
+        pass  # TODO
     else:
         raise ValueError("Unexpected `model_family` found in config.")
     return action
+
+
+def refresh_obs(obs, env):
+    """Fetches new observations from the environment and updates the current observations."""
+    new_obs = env.get_observation()
+    history_included = len(obs["full_image"].shape) == 4
+    if history_included:
+        obs["full_image"][-1] = new_obs["full_image"]
+        obs["image_primary"][-1] = new_obs["image_primary"]
+        obs["proprio"][-1] = new_obs["proprio"]
+    else:
+        obs["full_image"] = new_obs["full_image"]
+        obs["image_primary"] = new_obs["image_primary"]
+        obs["proprio"] = new_obs["proprio"]
+    return obs
