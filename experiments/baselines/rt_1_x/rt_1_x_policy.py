@@ -111,8 +111,6 @@ class RT1XPolicy:
         self.embed = hub.load("https://tfhub.dev/google/universal-sentence-encoder-large/5")
         self.natural_language_embedding = None
         self.task_label = None
-        # Observation history.
-        self.image_history = []
 
     def update_task_label(self, task_label):
         """Set the task label and embedding."""
