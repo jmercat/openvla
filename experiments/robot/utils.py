@@ -59,8 +59,8 @@ def get_widowx_env(cfg, model=None):
         )
 
         env = UnnormalizeActionProprio(env, model.dataset_statistics["bridge_dataset"], normalization_type="normal")
-        env = HistoryWrapper(env, horizon=2)
-        env = TemporalEnsembleWrapper(env, pred_horizon=4)
+        env = HistoryWrapper(env, horizon=1)
+        env = TemporalEnsembleWrapper(env, pred_horizon=1)
     return env
 
 

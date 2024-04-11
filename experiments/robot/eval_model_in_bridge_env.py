@@ -10,7 +10,8 @@ Usage:
         --pretrained_checkpoint <CHECKPOINT_PATH>
 
     # Octo:
-    python experiments/robot/eval_model_in_bridge_env.py --model_family octo
+    python experiments/robot/eval_model_in_bridge_env.py --model_family octo \
+         --blocking True --control_frequency 2.5
 
     # RT-1-X:
     python experiments/robot/eval_model_in_bridge_env.py --model_family rt_1_x \
