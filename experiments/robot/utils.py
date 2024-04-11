@@ -47,8 +47,8 @@ def get_widowx_env(cfg, model=None):
     widowx_client.init(env_params)
     env = WidowXGym(
         widowx_client,
-        blocking=cfg.blocking,
         cfg=cfg,
+        blocking=cfg.blocking,
     )
     # (For Octo only) Wrap the robot environment.
     if cfg.model_family == "octo":
