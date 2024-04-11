@@ -64,7 +64,6 @@ class WidowXGym(gym.Env):
         cfg: Dict,
         im_size: int = 256,
         blocking: bool = True,
-        sticky_gripper_num_steps: int = 1,
     ):
         self.widowx_client = widowx_client
         self.im_size = im_size
@@ -85,23 +84,9 @@ class WidowXGym(gym.Env):
             }
         )
         self.action_space = gym.spaces.Box(low=np.zeros((7,)), high=np.ones((7,)), dtype=np.float64)
-        self.sticky_gripper_num_steps = sticky_gripper_num_steps
         self.cfg = cfg
-        self.is_gripper_closed = False
-        self.num_consecutive_gripper_change_actions = 0
 
     def step(self, action):
-        # sticky gripper logic
-        if (action[-1] < 0.5) != self.is_gripper_closed:
-            self.num_consecutive_gripper_change_actions += 1
-        else:
-            self.num_consecutive_gripper_change_actions = 0
-
-        if self.num_consecutive_gripper_change_actions >= self.sticky_gripper_num_steps:
-            self.is_gripper_closed = not self.is_gripper_closed
-            self.num_consecutive_gripper_change_actions = 0
-        action[-1] = 0.0 if self.is_gripper_closed else 1.0
-
         self.widowx_client.step_action(action, blocking=self.blocking)
 
         raw_obs = self.widowx_client.get_observation()
@@ -122,9 +107,6 @@ class WidowXGym(gym.Env):
 
         self.widowx_client.reset()
         self.move_to_start_state()
-
-        self.is_gripper_closed = False
-        self.num_consecutive_gripper_change_actions = 0
 
         raw_obs = wait_for_obs(self.widowx_client)
         obs = convert_obs(raw_obs, self.im_size)
@@ -161,10 +143,10 @@ class WidowXGym(gym.Env):
                         [0.00, 0.00, 0.00, 1.00],
                     ]
                 )
-                # Note: Super important to move to reset position with blocking==True.
-                #       Otherwise, the controller's `_reset_previous_qpos()` call will be called immediately after
-                #       the move command is given -- and before the move is complete -- and the initial state will
-                #       be totally incorrect.
+                # IMPORTANT: It is very important to move to reset position with blocking==True.
+                #            Otherwise, the controller's `_reset_previous_qpos()` call will be called immediately after
+                #            the move command is given -- and before the move is complete -- and the initial state will
+                #            be totally incorrect.
                 self.widowx_client.move(transform, duration=0.8, blocking=True)
                 successful = True
             except Exception as e:
