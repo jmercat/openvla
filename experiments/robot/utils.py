@@ -27,20 +27,28 @@ DEVICE = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("
 np.set_printoptions(formatter={"float": lambda x: "{0:0.2f}".format(x)})
 
 
-def get_widowx_env(cfg, model=None):
-    """Get WidowX control environment."""
-    # Set up the widowx client.
-    start_state = np.concatenate([cfg.init_ee_pos, cfg.init_ee_quat])
+def get_widowx_env_params(cfg):
+    """Gets (mostly default) environment parameters for the WidowX environment."""
     env_params = WidowXConfigs.DefaultEnvParams.copy()
     env_params["override_workspace_boundaries"] = cfg.bounds
     env_params["camera_topics"] = cfg.camera_topics
-    env_params["start_state"] = list(start_state)
     env_params["return_full_image"] = True
+    return env_params
+
+
+def get_widowx_env(cfg, model=None):
+    """Get WidowX control environment."""
+    # Set up the WidowX environment parameters.
+    env_params = get_widowx_env_params(cfg)
+    start_state = np.concatenate([cfg.init_ee_pos, cfg.init_ee_quat])
+    env_params["start_state"] = list(start_state)
+    # Set up the WidowX client.
     widowx_client = WidowXClient(host=cfg.host_ip, port=cfg.port)
     widowx_client.init(env_params)
     env = WidowXGym(
         widowx_client,
         blocking=cfg.blocking,
+        cfg=cfg,
     )
     # (For Octo only) Wrap the robot environment.
     if cfg.model_family == "octo":
@@ -61,14 +69,18 @@ def get_vla_image_resize_size(vision_backbone_id: str) -> int:
     return VISION_BACKBONES[vision_backbone_id]["kwargs"]["default_image_size"]
 
 
-def get_image_resize_size(cfg) -> int:
-    """Gets image resize size (square)."""
+def get_image_resize_size(cfg):
+    """
+    Gets image resize size for a model class.
+    If `resize_size` is an int, then the resized image will be a square.
+    Else, the image will be a rectangle.
+    """
     if cfg.model_family == "llava":
         resize_size = get_vla_image_resize_size(cfg.model.vision_backbone_id)
     elif cfg.model_family == "octo":
         resize_size = 256
     elif cfg.model_family == "rt_1_x":
-        pass  # TODO
+        resize_size = (640, 480)  # PIL expects (W, H)
     else:
         raise ValueError("Unexpected `model_family` found in config.")
     return resize_size
@@ -107,6 +119,7 @@ def get_model(cfg):
         model = RT1XPolicy(saved_model_path=cfg.pretrained_checkpoint)
     else:
         raise ValueError("Unexpected `model_family` found in config.")
+    print(f"Loaded model: {type(model)}")
     return model
 
 
@@ -137,27 +150,34 @@ def save_rollout_gif(rollout_images, idx):
 
 def resize_image(img, resize_size):
     """Takes numpy array corresponding to a single image and returns resized image as numpy array."""
+    assert isinstance(resize_size, tuple)
     img = Image.fromarray(img)
-    BRIDGE_ORIG_IMG_SIZE = 256
-    img = img.resize((BRIDGE_ORIG_IMG_SIZE, BRIDGE_ORIG_IMG_SIZE), Image.Resampling.LANCZOS)
-    img = img.resize((resize_size, resize_size), Image.Resampling.LANCZOS)  # also resize to size seen at train time
+    BRIDGE_ORIG_IMG_SIZE = (256, 256)
+    img = img.resize(BRIDGE_ORIG_IMG_SIZE, Image.Resampling.LANCZOS)
+    img = img.resize(resize_size, Image.Resampling.LANCZOS)  # also resize to size seen at train time
     img = img.convert("RGB")
     img = np.array(img)
     return img
 
 
 def get_preprocessed_image(obs, resize_size):
-    """Extracts image from observations and preprocesses it."""
-    # Preprocess the image the exact same way that the Berkeley Bridge folks did it
-    # to minimize distribution shift.
-    # NOTE (Moo Jin): Yes, we resize down to 256x256 first even though the image may end up being
-    # resized up to a different resolution by some models. This is just so that we're in-distribution
-    # w.r.t. the original preprocessing at train time.
+    """
+    Extracts image from observations and preprocesses it.
+
+    Preprocess the image the exact same way that the Berkeley Bridge folks did it
+    to minimize distribution shift.
+    NOTE (Moo Jin): Yes, we resize down to 256x256 first even though the image may end up being
+                    resized up to a different resolution by some models. This is just so that we're in-distribution
+                    w.r.t. the original preprocessing at train time.
+    """
+    assert isinstance(resize_size, int) or isinstance(resize_size, tuple)
+    if isinstance(resize_size, int):
+        resize_size = (resize_size, resize_size)
     if len(obs["full_image"].shape) == 4:  # history included
         num_images_in_history = obs["full_image"].shape[0]
-        new_images = np.zeros(
-            (num_images_in_history, resize_size, resize_size, obs["full_image"].shape[-1]), dtype=np.uint8
-        )
+        assert resize_size[0] >= resize_size[1]  # in PIL format: (W, H) where W >= H
+        W, H = resize_size
+        new_images = np.zeros((num_images_in_history, H, W, obs["full_image"].shape[-1]), dtype=np.uint8)
         for i in range(num_images_in_history):
             new_images[i] = resize_image(obs["full_image"][i], resize_size)
         obs["full_image"] = new_images
@@ -228,6 +248,12 @@ def get_octo_action(model, obs, task_label, policy_function):
     return action
 
 
+def get_rt_1_x_action(model, obs, task_label):
+    """Generates an action with the RT-1-X policy."""
+    action = model.predict_action(obs, task_label)
+    return action
+
+
 def get_action(cfg, model, obs, task_label, policy_function=None):
     """Queries the model to get an action."""
     if cfg.model_family == "llava":
@@ -236,7 +262,7 @@ def get_action(cfg, model, obs, task_label, policy_function=None):
     elif cfg.model_family == "octo":
         action = get_octo_action(model, obs, task_label, policy_function)
     elif cfg.model_family == "rt_1_x":
-        pass  # TODO
+        action = get_rt_1_x_action(model, obs, task_label)
     else:
         raise ValueError("Unexpected `model_family` found in config.")
     return action

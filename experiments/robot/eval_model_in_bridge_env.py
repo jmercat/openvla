@@ -133,8 +133,13 @@ def main(cfg: GenerateConfig) -> None:
                     obs["full_image"] = get_preprocessed_image(obs, resize_size)
                     # Query model to get action.
                     action = get_action(cfg, model, obs, task_label, policy_fn)
-                    # End episode early if the robot doesn't move at all for a few consecutive steps.
-                    if np.isclose(np.linalg.norm(action), 1, atol=0.01) and np.linalg.norm(action[:6]) < 0.01:
+                    # (For OpenVLA) End episode early if the robot doesn't move at all for a few consecutive steps
+                    # because the inference is pretty slow with a single local GPU.
+                    if (
+                        cfg.model_family == "llava"
+                        and np.isclose(np.linalg.norm(action), 1, atol=0.01)
+                        and np.linalg.norm(action[:6]) < 0.01
+                    ):
                         zero_action_count += 1
                         if zero_action_count == 5:
                             print("Ending episode early due to robot inaction.")

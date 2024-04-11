@@ -338,3 +338,51 @@ High-level overview of repository/project file-tree:
 + `Makefile` - Top-level Makefile (by default, supports linting - checking & auto-fix); extend as needed.
 + `pyproject.toml` - Full project configuration details (including dependencies), as well as tool configurations.
 + `README.md` - You are here!
+
+## Evaluating Baseline Models
+
+### Octo
+
+Setup:
+
+```bash
+# Install Octo packages:
+git clone https://github.com/octo-models/octo.git
+cd octo
+pip install -e .
+pip install --upgrade "jax[cuda11_pip]==0.4.20" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+cd /PATH/TO/prismatic-dev
+pip install -r experiments/baselines/octo/octo_requirements.txt
+```
+
+Evaluate Octo:
+```bash
+python experiments/robot/eval_model_in_bridge_env.py --model_family octo
+```
+
+### RT-1-X
+
+Setup:
+
+```bash
+# Install RT-1-X packages:
+cd /PATH/TO/prismatic-dev
+pip install -r experiments/baselines/rt_1_x/rt_1_x_requirements.txt
+
+# You may have to upgrade TensorFlow packages as well:
+pip install -U tensorflow tensorflow-probability --force-reinstall
+
+# Download model checkpoint:
+cd experiments/baselines/rt_1_x/
+gsutil -m cp -r gs://gdm-robotics-open-x-embodiment/open_x_embodiment_and_rt_x_oss/rt_1_x_tf_trained_for_002272480_step.zip .
+unzip rt_1_x_tf_trained_for_002272480_step.zip
+rm rt_1_x_tf_trained_for_002272480_step.zip
+```
+
+Evaluate RT-1-X:
+
+```bash
+cd /PATH/TO/prismatic-dev
+python experiments/robot/eval_model_in_bridge_env.py --model_family rt_1_x \
+    --pretrained_checkpoint experiments/baselines/rt_1_x/rt_1_x_tf_trained_for_002272480_step/
+```
