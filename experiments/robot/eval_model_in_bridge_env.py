@@ -74,7 +74,7 @@ class GenerateConfig:
     blocking: bool = False
     max_episodes: int = 50
     max_steps: int = 60
-    control_frequency: int = 5
+    control_frequency: float = 5
 
     # Training stage (doesn't matter here, but the loading function expects the argument)
     stage: str = "vla-finetune"
