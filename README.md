@@ -12,7 +12,7 @@ following structure:
 - **[Default]** `vla-core` - Treat this as the `main` branch for developing any new VLA changes; always PR to this
   branch in lieu of `main`.
 - `vlm-core` - This is the central branch for developing new VLM features (that are meant to be pushed to the public
-  open-source code). Sidd/Suraj will sync upstream changes to `vla-core`.
+  open-source code). Sidd/Ashwin will sync upstream changes to `vla-core`.
 - `main` - Treat this as a *locked branch*; it tracks the latest stable code in the open-source VLM repository.
 
 #### Default Setup Instructions
@@ -47,7 +47,7 @@ git commit -m "<informative and clean commit message>"
 git push -u origin <feature-branch-name>
 ```
 
-When ready, initiate PR to `siddk/prismatic-dev@vla-core`. The maintainers (Sidd/Moo Jin/Suraj/Karl) will review and
+When ready, initiate PR to `siddk/prismatic-dev@vla-core`. The maintainers (Sidd/Moo Jin/Ashwin/Karl) will review and
 merge into `vla-core`.
 
 
@@ -58,10 +58,10 @@ For TRI collaborators, the above process is a bit different, as you should alrea
 following:
 
 ```bash
-# Switch to `vla-core` on your local branch (e.g., `suraj-nair-tri/prismatic-dev@vla-core`)
+# Switch to `vla-core` on your local branch (e.g., `ashwin-balakrishna96/prismatic-dev@vla-core`)
 git checkout vla-core
 
-# This should indicate `origin` is set to your local fork (e.g., `suraj-nair-tri/prismatic-dev.gt`) AND that
+# This should indicate `origin` is set to your local fork (e.g., `ashwin-balakrishna96/prismatic-dev.git`) AND that
 # `tri-origin` is set to the TRI internal repo (e.g., `TRI-ML/prismatic-dev.git`).
 git remote -v
 
@@ -73,7 +73,7 @@ git remote add sk-origin https://github.com/siddk/prismatic-dev.git
 git pull sk-origin vla-core
 ```
 
-When contributing, just make sure to PR to `siddk/prismatic-dev@vla-core` **not** the TRI-ML repository. Sidd/Suraj
+When contributing, just make sure to PR to `siddk/prismatic-dev@vla-core` **not** the TRI-ML repository. Sidd/Ashwin
 will handle keeping things in sync (including any changes to `vlm-core`).
 
 ---
@@ -277,7 +277,7 @@ We use PyTorch Fully Sharded Data Parallel (FSDP) to distribute training across 
 
 ```bash
 # Train VLA on Bridge V2 with the Prismatic SigLIP 224px Backbone on a Single Node (w/ 8 GPUs)
-#   => Note: To log / access the `openvla` project under the `stanford-voltron` entity, ask Sidd/Suraj/Moo Jin!
+#   => Note: To log / access the `openvla` project under the `stanford-voltron` entity, ask Sidd/Ashwin/Moo Jin!
 torchrun --standalone --nnodes 1 --nproc-per-node 8 vla-scripts/train.py \
   --vla.type "siglip-224px+mx-bridge" \
   --data_root_dir <PATH TO OXE DATA ROOT> \
@@ -307,18 +307,27 @@ AttributeError: 'DLataset' object has no attribute 'traj_map'. Did you mean: 'fl
 
 ## Evaluating VLAs
 
-### Bridge V2 Evals
+### Bridge V2 Evaluations
 
-On `iris-ws-18`, run the following commands:
-```
+**Stanford/IRIS Lab Specific**: On `iris-ws-18`, run the following:
+
+```bash
 source /iris/u/moojink/.openvla_widowx_profile
 sudo v4l2-ctl --list-devices
 /iris/u/moojink/widowx_control/scripts/run.sh -v 0 # *** CHANGE THE CAMERA INDEX BASED ON ABOVE OUTPUT ***
 ```
-NOTE: The second command will print a list of the cameras that the workstation has access to, like `/dev/video0` and `/dev/video1`. If you don't see any cameras, they might not be connected to the workstation. Let's say you want to use the camera labeled as `/dev/video1`. Then, run the command below to launch the WidowX control stack (I like to do this in a tmux session). The `-v 1` arg tells the launcher script that you want the camera at index `1` to be mapped to `camera0` in the robot infrastructure code. If you want to use `/dev/video0` instead of `/dev/video1`, then you would use the argument `-v 0`.
 
-Now, in another Terminal, run the commands below. Modify args as needed.
-```
+**Note**: The second command will print a list of the cameras that the workstation has access to 
+(e.g.,`/dev/video0` and `/dev/video1`). If you don't see any cameras, they might not be connected to the workstation. 
+
+Let's say you want to use the camera labeled as `/dev/video1`. Run the command below to launch the WidowX control stack 
+(e.g., in a tmux session). The `-v 1` arg tells the launcher script that you want the camera at index `1` to be mapped 
+to `camera0` in the robot infrastructure code. If you want to use `/dev/video0` instead of `/dev/video1`, then you 
+would use the argument `-v 0`.
+
+Now, in another Terminal, run the commands below. Modify arguments as needed:
+
+```bash
 source /iris/u/moojink/.openvla_widowx_profile
 python experiments/robot/eval_vla_on_bridge_env.py \
     --model.type <VLM_TYPE> \

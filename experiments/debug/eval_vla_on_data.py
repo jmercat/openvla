@@ -1,8 +1,7 @@
 """
 eval_vla_on_data.py
 
-Runs a VLA checkpoint on samples from a dataset.
-(Sanity check to ensure we are doing test-time inference correctly.)
+Runs a VLA checkpoint on samples from a dataset -- sanity check to ensure we are doing test-time inference correctly.
 
 Usage:
     python experiments/debug/eval_vla_on_data.py \
@@ -27,7 +26,7 @@ from torchvision.transforms import Normalize
 from transformers import LlamaTokenizerFast
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
-from prismatic.conf import DatasetConfig, DatasetRegistry, ModelConfig, VLAConfig, VLARegistry
+from prismatic.conf import ModelConfig, VLAConfig, VLARegistry
 from prismatic.models.materialize import get_llm_backbone_and_tokenizer, get_vision_backbone_and_transform
 from prismatic.models.vlms import OpenVLA, PrismaticVLM
 from prismatic.overwatch import initialize_overwatch
@@ -44,10 +43,6 @@ overwatch = initialize_overwatch(__name__)
 
 
 class ModifiedOpenVLA(OpenVLA):
-    """
-    Subclass of OpenVLA that overrides `predict_action()`.
-    """
-
     def __init__(
         self,
         *args,
@@ -55,13 +50,15 @@ class ModifiedOpenVLA(OpenVLA):
         action_tokenizer,
         **kwargs,
     ) -> None:
+        """Subclass of OpenVLA that overrides `predict_action()`."""
         super(ModifiedOpenVLA, self).__init__(
             *args, action_norm_stats=action_norm_stats, action_tokenizer=action_tokenizer, **kwargs
         )
 
     @torch.inference_mode()
     def predict_action(self, image: Image, instruction: str, **kwargs: str) -> np.ndarray:
-        """Same as `OpenVLA.predict_action()`, except that we also return `predicted_action_token_ids`."""
+        """Similar to `OpenVLA.predict_action()` --> additionally returns `predicted_action_token_ids`."""
+
         # For now, only support generation with a batch size of 1 for simplicity
         image_transform, tokenizer = self.vision_backbone.image_transform, self.llm_backbone.tokenizer
 
@@ -72,17 +69,17 @@ class ModifiedOpenVLA(OpenVLA):
 
         # Prepare Inputs
         input_ids = tokenizer(prompt_text, truncation=True, return_tensors="pt").input_ids.to(self.device)
-
         if isinstance(tokenizer, LlamaTokenizerFast):
-            # Note (Moo Jin): We need to add this special empty token ('') after the colon (':') token in "ASSISTANT:"
+            # Note (@moojink): We need to add this special empty token ('') after the colon (':') token in "ASSISTANT:"
             # in order for the predictions to match the training configuration and be accurate.
             input_ids = torch.cat(
                 (input_ids, torch.unsqueeze(torch.Tensor([29871]).long(), dim=0).to(self.device)), dim=1
             )
         else:
-            # TODO (Moo Jin): figure out how to make this tokenizer-independent
+            # TODO (@moojink)): figure out how to make this tokenizer-independent
             raise ValueError(f"Unsupported `tokenizer` type = {type(tokenizer)}")
 
+        # Prepare Visual Observation
         pixel_values = image_transform(image)
         if isinstance(pixel_values, torch.Tensor):
             pixel_values = pixel_values[None, ...].to(self.device)
@@ -96,8 +93,8 @@ class ModifiedOpenVLA(OpenVLA):
         with torch.autocast("cuda", dtype=autocast_dtype, enabled=self.enable_mixed_precision_training):
             # fmt: off
             generated_ids = super(PrismaticVLM, self).generate(
-                input_ids=input_ids,  # Shape: [1, seq]
-                pixel_values=pixel_values,  # Shape: [1, 3, res, res] or Dict[str, Shape[1, 3, res, res]]
+                input_ids=input_ids,                # Shape: [1, seq]
+                pixel_values=pixel_values,          # Shape: [1, 3, res, res] or Dict[str, Shape[1, 3, res, res]]
                 max_new_tokens=self.action_dim,
                 **kwargs
             )
@@ -204,19 +201,15 @@ class GenerateConfig:
         default_factory=VLAConfig.get_choice_class(VLARegistry.LLAVA_REPRO_MX_BRIDGE.vla_id)
     )
 
-    # Directory containing dataset(s) to run evaluations on
-    data_root_dir: str = "/scr-ssd/moojink/data/oxe/modified/"
-
-
-    # Pre-trained VLA model checkpoint to load
-    pretrained_checkpoint: Union[str, Path] = Path(
-        "/sphinx/u/moojink/prismatic-vlms/logs/bridge--repro-llava-batching-wd-p1+7b--stage=vla_finetune--seed=7--2024_01_20/checkpoints/step-065000-epoch-00-loss=0.4670.pt"
+    # Model & Data Parameters
+    pretrained_checkpoint: Union[str, Path] = Path(             # Pretrained VLA checkpoint to load
+        "/sphinx/u/moojink/prismatic-vlms/logs/"
+        "bridge--repro-llava-batching-wd-p1+7b--stage=vla_finetune--seed=7--2024_01_20/checkpoints/"
+        "step-065000-epoch-00-loss=0.4670.pt"
     )
+    data_root_dir: str = "/scr-ssd/moojink/data/oxe/modified/"  # Directory containing dataset(s) to evaluate
 
-    # DatasetConfig from `prisma/conf/datasets.py`; override with --dataset.type `DatasetRegistry.<DATASET>.dataset_id`
-    dataset: DatasetConfig = field(default_factory=DatasetConfig.get_choice_class(DatasetRegistry.LLAVA_V15.dataset_id))
-
-    # Training stage (doesn't matter here, but the loading function expects the argument)
+    # Training Stage (doesn't matter here, but the loading function expects the argument)
     stage: str = "vla-finetune"
 
     # HF Hub Credentials (for LLaMa-2)
@@ -229,6 +222,7 @@ class GenerateConfig:
 
 def get_vla(cfg):
     """Loads and returns a VLA model from checkpoint."""
+
     # Prepare for model loading.
     hf_token = cfg.hf_token.read_text().strip() if isinstance(cfg.hf_token, Path) else os.environ[cfg.hf_token]
     # Load VLA checkpoint.
@@ -267,69 +261,76 @@ def compute_actions_accuracy_l1_loss(
 def eval_teacher_forcing(batch, vla, action_tokenizer):
     """
     Evaluates model on input batch with teacher forcing (ground-truth output token fed as inputs during generation).
-    We use greedy decoding here via `argmax()` on the output logits.
-    This should return similar metrics as seen during training.
+
+    We use greedy decoding via `argmax()` on logits --> this should return similar metrics as seen in training.
     """
     inputs = copy.deepcopy(batch)
-    # Run model forward pass.
+
+    # VLA Forward
     output: CausalLMOutputWithPast = vla(
         input_ids=inputs["input_ids"],
         attention_mask=inputs["attention_mask"],
         pixel_values=inputs["pixel_values"],
         labels=inputs["labels"],
     )
-    # Note (Moo Jin): Output predictions and labels are shifted by 1 position w.r.t. each other,
-    # hence the different indexing below.
+
+    # Note (@moojink): Output predictions and labels are shifted by 1 w.r.t. each other --> index appropriately!
     ground_truth_action_token_ids = inputs["labels"][:, -1 - ACTION_DIM : -1]
     predicted_action_token_ids = output["logits"].argmax(axis=2)[:, -2 - ACTION_DIM : -2]
-    # Compute action tokens accuracy and L1 loss.
+
+    # Compute Action Token Accuracy and L1 Loss
     actions_accuracy, l1_loss = compute_actions_accuracy_l1_loss(
         action_tokenizer, ground_truth_action_token_ids, predicted_action_token_ids, print_text="Teacher forcing:"
     )
+
     return actions_accuracy, l1_loss
 
 
 def eval_no_teacher_forcing(batch, vla, action_tokenizer):
     """
-    Evaluates model on input batch without using teacher forcing.
-    Leverages the model's `generate()` function.
-    We use greedy decoding here by passing `do_sample=False` to `generate()`.
+    Evaluates model on input batch *without* teacher forcing.
+
+    Uses the VLA model's `generate()` function --> greedy decoding via `do_sample=False`.
     """
-    # Prepare inputs.
     inputs = copy.deepcopy(batch)
-    # Remove the action tokens from the prompt.
+
+    # Remove Action Tokens from Prompt
     ground_truth_action_token_ids = inputs["labels"][:, -1 - ACTION_DIM : -1]
     inputs["input_ids"] = inputs["input_ids"][:, : -ACTION_DIM - 1]
     inputs["labels"] = inputs["labels"][:, : -ACTION_DIM - 1]
     inputs["attention_mask"] = inputs["attention_mask"][:, : -ACTION_DIM - 1]
-    # Call HF-style `generate()` (via superclass of PrismaticVLM) to generate action tokens.
+
+    # Call HF-style `generate()` (via superclass of PrismaticVLM) to generate action tokens
     generated_ids = super(PrismaticVLM, vla).generate(**inputs, max_new_tokens=ACTION_DIM, do_sample=False)
     predicted_action_token_ids = generated_ids[:, -ACTION_DIM:]
-    # Compute action tokens accuracy and L1 loss.
+
+    # Compute Action Token Accuracy and L1 Loss
     actions_accuracy, l1_loss = compute_actions_accuracy_l1_loss(
         action_tokenizer,
         ground_truth_action_token_ids,
         predicted_action_token_ids,
         print_text="No teacher forcing - generate():",
     )
+
     return actions_accuracy, l1_loss
 
 
 def eval_no_teacher_forcing_manual_generate(batch, vla, action_tokenizer):
     """
-    Evaluates model on input batch without using teacher forcing.
-    Manually rolls out autoregressive output prediction using model's `forward()` instead of `generate()`.
-    We use greedy decoding here via `argmax()` on the output logits at each step.
+    Evaluates model on input batch *without* teacher forcing.
+
+    Manually rolls out autoregressive prediction using VLA model's `forward()` instead of `generate()` --> greedy
+    decoding via `argmax()` on logits at each step.
     """
-    # Prepare inputs.
     inputs = copy.deepcopy(batch)
-    # Remove the action tokens from the prompt.
+
+    # Remove Action Tokens from Prompt
     ground_truth_action_token_ids = inputs["labels"][:, -1 - ACTION_DIM : -1]
     inputs["input_ids"] = inputs["input_ids"][:, : -ACTION_DIM - 1]
     inputs["labels"] = inputs["labels"][:, : -ACTION_DIM - 1]
     inputs["attention_mask"] = inputs["attention_mask"][:, : -ACTION_DIM - 1]
-    # Manually generate the outputs one token at a time, appending each
-    # output token to the inputs (slow because not caching).
+
+    # Manually generate the outputs one token at a time, appending each output token to input (slow --> no caching).
     curr_input_ids = torch.clone(inputs["input_ids"]).cpu().numpy().tolist()[0]
     curr_attention_mask = torch.clone(inputs["attention_mask"]).cpu().numpy().tolist()[0]
     for _ in range(ACTION_DIM):
@@ -345,60 +346,69 @@ def eval_no_teacher_forcing_manual_generate(batch, vla, action_tokenizer):
             pixel_values=inputs["pixel_values"],
             labels=None,
         )
-        predicted_token = output["logits"].argmax(axis=2)[:, -1].item()  # greedy decoding
+
+        # Greedy Decoding --> append to `curr_input_ids` (autoregressive)
+        predicted_token = output["logits"].argmax(axis=2)[:, -1].item()
         curr_attention_mask.append(True)
-        curr_input_ids.append(predicted_token)  # autoregressive: insert our last predicted token
+        curr_input_ids.append(predicted_token)
+
     generated_ids = torch.Tensor([curr_input_ids]).to(inputs["input_ids"].dtype).to(inputs["input_ids"].device)
     predicted_action_token_ids = generated_ids[:, -ACTION_DIM:]
-    # Compute action tokens accuracy and L1 loss.
+
+    # Compute Action Token Accuracy and L1 Loss
     actions_accuracy, l1_loss = compute_actions_accuracy_l1_loss(
         action_tokenizer,
         ground_truth_action_token_ids,
         predicted_action_token_ids,
         print_text="No teacher forcing - manual autoregressive generation:",
     )
+
     return actions_accuracy, l1_loss
 
 
 def eval_no_teacher_forcing_prompt_builder(batch, vla, action_tokenizer, tokenizer, image_transform):
     """
-    Evaluates model on input batch without using teacher forcing.
-    Leverages method `ModifiedOpenVLA.predict_action()`.
-    We use greedy decoding here by passing `do_sample=False` to `generate()`.
+    Evaluates model on input batch *without* teacher forcing.
 
-    Pretty hacky because we need to recover the original image from `pixel_values` somehow (via un-normalization).
+    Leverages `ModifiedOpenVLA.predict_action()` --> greedy decoding via `do_sample=False` in call to `generate()`.
+
+    Note (@moojink): Pretty hacky -- recovers the original image from `pixel_values` (via un-normalization).
     """
     inputs = copy.deepcopy(batch)
     assert inputs["input_ids"].shape[0] == 1, "Prompt builder generate expects batch size == 1"
-    # Get the original image normalization function to invert.
+
+    # Get Original Image Normalization --> Invert!
     orig_norm = image_transform.transforms[-1]
     assert isinstance(orig_norm, Normalize)
-    # Get the un-normalization function.
     unnormalize = Normalize((-orig_norm.mean / orig_norm.std).tolist(), (1.0 / orig_norm.std).tolist())
-    # Un-normalize image.
+
+    # Unnormalize `pixel_values`
     assert inputs["pixel_values"].shape[0] == 1
-    image = unnormalize(inputs["pixel_values"][0])
     image = np.uint8(
         np.transpose(unnormalize(inputs["pixel_values"][0]).type(torch.float32).cpu().numpy(), (1, 2, 0)) * 255
     )
     image = Image.fromarray(image).convert("RGB")
-    # Extract task description.
+
+    # Extract Task Description
     USER_PROMPT_START_IDX = 34
+    NUM_TOKENS_FOR_ASSISTANT = 7
+    TASK_DESCRIPTION_START_IDX = 37
     assert (
         tokenizer.decode(inputs["input_ids"][0][:USER_PROMPT_START_IDX])
         == "<s> A chat between a curious user and an artificial intelligence assistant. "
         "The assistant gives helpful, detailed, and polite answers to the user's questions. USER:"
     )
     assert tokenizer.decode(inputs["input_ids"][0][: -ACTION_DIM - 2])[-10:] == "ASSISTANT:"
-    NUM_TOKENS_FOR_ASSISTANT = 7
+
     message = tokenizer.decode(inputs["input_ids"][0][USER_PROMPT_START_IDX : -ACTION_DIM - NUM_TOKENS_FOR_ASSISTANT])
-    TASK_DESCRIPTION_START_IDX = 37
     assert message[:TASK_DESCRIPTION_START_IDX] == "What action should the robot take to "
     assert message[-1] == "?"
+
+    # Call `ModifiedOpenVLA.predict_action()` to generate action tokens
     task_description = message[TASK_DESCRIPTION_START_IDX:-1]
-    # Call `ModifiedOpenVLA.predict_action()` to generate action tokens.
     action, predicted_action_token_ids = vla.predict_action(image, task_description, do_sample=False)
-    # Compute action tokens accuracy and L1 loss.
+
+    # Compute Action Token Accuracy and L1 Loss
     ground_truth_action_token_ids = inputs["labels"][:, -1 - ACTION_DIM : -1]
     actions_accuracy, l1_loss = compute_actions_accuracy_l1_loss(
         action_tokenizer,
@@ -406,11 +416,12 @@ def eval_no_teacher_forcing_prompt_builder(batch, vla, action_tokenizer, tokeniz
         predicted_action_token_ids,
         print_text="No teacher forcing - prompt builder:",
     )
+
     return actions_accuracy, l1_loss
 
 
 def print_results(stats_dict, num_batches):
-    """Computes aggregate loss and accuracy and prints the results."""
+    """Computes aggregate loss + accuracy --> prints the results."""
     for k in stats_dict.keys():
         stats_dict[k]["avg_l1_loss"] = stats_dict[k]["l1_loss"] / num_batches
         stats_dict[k]["avg_actions_accuracy"] = stats_dict[k]["actions_accuracy"] / num_batches
@@ -418,6 +429,7 @@ def print_results(stats_dict, num_batches):
     print("Aggregate metrics:")
     print("===========================================================")
     print(f"# batches: {num_batches}")
+
     for k in stats_dict.keys():
         if k == "teacher_forcing":
             print("Teacher forcing:")
@@ -427,17 +439,20 @@ def print_results(stats_dict, num_batches):
             print("No teacher forcing - manual autoregressive generation:")
         else:
             print("No teacher forcing - prompt builder:")
+
         print(f"    Average L1 loss: {stats_dict[k]['avg_l1_loss']}")
         print(f"    Average action tokens accuracy: {stats_dict[k]['avg_actions_accuracy']}")
 
 
 @draccus.wrap()
-def main(cfg: GenerateConfig) -> None:
+def eval_vla_on_data(cfg: GenerateConfig) -> None:
     assert cfg.pretrained_checkpoint is not None, "cfg.pretrained_checkpoint must not be None!"
-    # Get VLA policy and tokenizer.
+
+    # Get VLA Policy and Tokenizer
     vla = get_vla(cfg)
     tokenizer = vla.llm_backbone.get_tokenizer()
-    # Get VLA dataset and collator.
+
+    # Get VLA Dataset and Collator
     print(f"Creating VLA Open-X Dataset with Mixture `{cfg.vla.data_mix}`")
     image_transform = vla.vision_backbone.get_image_transform()
     vla_dataset, action_tokenizer, collator = get_vla_dataset_and_collator(
@@ -449,16 +464,12 @@ def main(cfg: GenerateConfig) -> None:
         default_image_resolution=vla.vision_backbone.default_image_resolution,
         shuffle_buffer_size=1000,
     )
-    # Create dataloader.
+
+    # Create DataLoader
     batch_size = 1
-    dataloader = DataLoader(
-        vla_dataset,
-        batch_size=batch_size,
-        collate_fn=collator,
-        num_workers=0,
-        shuffle=False,
-    )
-    # Prepare aggregate metrics dict.
+    dataloader = DataLoader(vla_dataset, batch_size=batch_size, collate_fn=collator, num_workers=0, shuffle=False)
+
+    # Initialize Aggregate Metrics
     stats_dict = {
         "teacher_forcing": {},
         "no_teacher_forcing": {},
@@ -470,45 +481,53 @@ def main(cfg: GenerateConfig) -> None:
         stats_dict[k]["actions_accuracy"] = 0.0
         stats_dict[k]["avg_l1_loss"] = 0.0
         stats_dict[k]["avg_actions_accuracy"] = 0.0
+
     num_batches = 0
     for idx, batch in enumerate(dataloader):
         print("===========================================================")
         print(f"Batch {idx}:")
         print("===========================================================")
-        # Prepare inputs and move them to device.
+
+        # Prepare Inputs --> Move to Device
         batch.pop("dataset_names")
         for k in batch.keys():
             batch[k] = batch[k].to(DEVICE)
             if k == "pixel_values":
                 batch[k] = batch[k].to(dtype=vla.llm_backbone.half_precision_dtype)
-        # Generate actions with teacher forcing.
+
+        # Generate Actions with Teacher Forcing
         actions_accuracy, l1_loss = eval_teacher_forcing(batch, vla, action_tokenizer)
         stats_dict["teacher_forcing"]["l1_loss"] += l1_loss
         stats_dict["teacher_forcing"]["actions_accuracy"] += actions_accuracy
         print("-----------------------------------------------------------")
-        # Generate actions without teacher forcing: via HF-style `generate()`.
+
+        # Generate Actions without Teacher Forcing --> HF-style `generate()`
         actions_accuracy, l1_loss = eval_no_teacher_forcing(batch, vla, action_tokenizer)
         stats_dict["no_teacher_forcing"]["l1_loss"] += l1_loss
         stats_dict["no_teacher_forcing"]["actions_accuracy"] += actions_accuracy
         print("-----------------------------------------------------------")
-        # Generate actions without teacher forcing: via manual autoregressive sequential prediction.
+
+        # Generate Actions without Teacher Forcing --> Manual Autoregressive Sequential Prediction
         actions_accuracy, l1_loss = eval_no_teacher_forcing_manual_generate(batch, vla, action_tokenizer)
         stats_dict["no_teacher_forcing_manual_generate"]["l1_loss"] += l1_loss
         stats_dict["no_teacher_forcing_manual_generate"]["actions_accuracy"] += actions_accuracy
         print("-----------------------------------------------------------")
-        # Generate actions without teacher forcing: via `ModifiedOpenVLA.predict_action()`.
+
+        # Generate Actions without Teacher Forcing --> `ModifiedOpenVLA.predict_action()`
         if batch_size == 1:
             actions_accuracy, l1_loss = eval_no_teacher_forcing_prompt_builder(
                 batch, vla, action_tokenizer, tokenizer, image_transform
             )
             stats_dict["teacher_forcing_prompt_builder"]["l1_loss"] += l1_loss
             stats_dict["teacher_forcing_prompt_builder"]["actions_accuracy"] += actions_accuracy
+
         num_batches += 1
         if num_batches == 100:
             break
-    # Compute aggregrate metrics and print the results.
+
+    # Compute & Print Aggregate Metrics
     print_results(stats_dict, num_batches)
 
 
 if __name__ == "__main__":
-    main()
+    eval_vla_on_data()

@@ -29,7 +29,8 @@ import numpy as np
 
 from prismatic.conf import ModelConfig, ModelRegistry
 
-sys.path.append("./")  # hack so that the interpreter can find experiments.robot
+# TODO (@moojink) Hack so that the interpreter can find experiments.robot
+sys.path.append("./")
 from experiments.robot.utils import (
     get_action,
     get_image_resize_size,
@@ -46,31 +47,34 @@ from experiments.robot.utils import (
 @dataclass
 class GenerateConfig:
     # fmt: off
-    model_family: str = "llava"
-
-    # Pre-trained model checkpoint to load
-    pretrained_checkpoint: Union[str, Path] = Path(
-        "/scr/moojink/checkpoints/tri/reproduction-llava-v15+mx-bridge+n1+b32+x7/checkpoints/step-077500-epoch-00-loss=0.0488.pt"
-    )
 
     # ModelConfig from `prisma/conf/models.py`; override with --model.type `ModelRegistry.<MODEL>.model_id`
     model: ModelConfig = field(
-        default_factory=ModelConfig.get_choice_class(
-            ModelRegistry.REPRODUCTION_7B.model_id
-        )
+        default_factory=ModelConfig.get_choice_class(ModelRegistry.REPRODUCTION_7B.model_id)
+    )
+    model_family: str = "llava"                                 # Base VLM model family (for prompt builder)
+
+    # Model Parameters
+    pretrained_checkpoint: Union[str, Path] = Path(             # Pretrained VLA checkpoint to load
+        "/scr/moojink/checkpoints/tri/reproduction-llava-v15+mx-bridge+n1+b32+x7/checkpoints/"
+        "step-077500-epoch-00-loss=0.0488.pt"
     )
 
-    # Environment-specific variables
+    # Environment-Specific Parameters
     host_ip: str = "localhost"
     port: int = 5556
+
+    # Note (@moojink) =>> Setting initial orientation with a 30 degree offset -- more natural!
     init_ee_pos: List[float] = field(default_factory=lambda: [0.3, -0.09, 0.26])
-    init_ee_quat: List[float] = field(default_factory=lambda: [0, -0.259, 0, -0.966])  # 30 degree offset more natural
+    init_ee_quat: List[float] = field(default_factory=lambda: [0, -0.259, 0, -0.966])
     bounds: List[List[float]] = field(default_factory=lambda: [
             [0.1, -0.20, -0.01, -1.57, 0],
             [0.45, 0.25, 0.30, 1.57, 0],
         ]
     )
+
     camera_topics: List[Dict[str, str]] = field(default_factory=lambda: [{"name": "/blue/image_raw"}])
+
     blocking: bool = False
     max_episodes: int = 50
     max_steps: int = 60
@@ -88,32 +92,38 @@ class GenerateConfig:
 
 
 @draccus.wrap()
-def main(cfg: GenerateConfig) -> None:
+def eval_model_in_bridge_env(cfg: GenerateConfig) -> None:
     assert cfg.pretrained_checkpoint is not None, "cfg.pretrained_checkpoint must not be None!"
-    # Get image resize size.
-    resize_size = get_image_resize_size(cfg)
-    # Load model.
+
+    # Load Model --> Get Expected Image Dimensions
     model = get_model(cfg)
-    # (For Octo) Create JAX JIT-compiled policy function.
+    resize_size = get_image_resize_size(cfg)
+
+    # [Octo] Create JAX JIT-compiled policy function.
     policy_fn = None
     if cfg.model_family == "octo":
         policy_fn = get_octo_policy_function(model)
-    # Initialize the WidowX environment.
+
+    # Initialize the Widow-X Environment
     env = get_widowx_env(cfg, model)
-    # Start evaluation.
+
+    # === Start Evaluation ===
     task_label = ""
     episode_idx = 0
     while episode_idx < cfg.max_episodes:
-        # Get task description from user.
+        # Get Task Description from User
         task_label = get_next_task_label(task_label)
         rollout_images = []
-        # Reset environment.
+
+        # Reset Environment
         obs, _ = env.reset()
-        # Setup.
+
+        # Setup
         t = 0
         zero_action_count = 0
         step_duration = 1.0 / cfg.control_frequency
-        # Start episode.
+
+        # Start Episode
         input(f"Press Enter to start episode {episode_idx+1}...")
         last_tstamp = time.time()
         while t < cfg.max_steps:
@@ -123,19 +133,24 @@ def main(cfg: GenerateConfig) -> None:
                     print(f"t: {t}")
                     print(f"Previous step elapsed time (sec): {curr_tstamp - last_tstamp:.2f}")
                     last_tstamp = time.time()
-                    # Refresh the camera image and proprio state.
+
+                    # Refresh the Camera Image and Proprioceptive State
                     obs = refresh_obs(obs, env)
-                    # Save image for rollout GIF.
-                    if len(obs["full_image"].shape) == 4:  # obs with history
+
+                    # Save Image for Rollout GIF =>> Switch on History / No History
+                    if len(obs["full_image"].shape) == 4:
                         rollout_images.append(obs["full_image"][-1])
-                    else:  # obs with no history
+                    else:
                         rollout_images.append(obs["full_image"])
-                    # Get preprocessed image.
+
+                    # Get Preprocessed Image
                     obs["full_image"] = get_preprocessed_image(obs, resize_size)
-                    # Query model to get action.
+
+                    # Query Model --> Get Action
                     action = get_action(cfg, model, obs, task_label, policy_fn)
-                    # (For OpenVLA) End episode early if the robot doesn't move at all for a few consecutive steps
-                    # because the inference is pretty slow with a single local GPU.
+
+                    # [OpenVLA] End episode early if the robot doesn't move at all for a few consecutive steps!
+                    #   - Reason: Inference is pretty slow with a single local GPU...
                     if (
                         cfg.model_family == "llava"
                         and np.isclose(np.linalg.norm(action), 1, atol=0.01)
@@ -147,19 +162,23 @@ def main(cfg: GenerateConfig) -> None:
                             break
                     else:
                         zero_action_count = 0
-                    # Execute action in environment.
+
+                    # Execute Action
                     print("action:", action)
                     obs, _, _, _, _ = env.step(action)
                     t += 1
+
             except Exception as e:
                 print(f"Caught exception: {e}")
                 break
-        # Save a replay GIF of the episode.
+
+        # Save a Replay GIF of the Episode
         save_rollout_gif(rollout_images, episode_idx)
-        # Redo episode or continue.
+
+        # Redo Episode or Continue...
         if input("Enter 'r' if you want to redo the episode, or press Enter to continue: ") != "r":
             episode_idx += 1
 
 
 if __name__ == "__main__":
-    main()
+    eval_model_in_bridge_env()

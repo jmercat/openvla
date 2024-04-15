@@ -149,8 +149,8 @@ dmypy.json
 cache/
 data/
 
-# Rollout videos
+# Rollout Videos
 rollouts/
 
-# Default log directory
+# Default Log Directory
 runs/
