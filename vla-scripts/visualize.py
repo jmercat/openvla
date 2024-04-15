@@ -21,7 +21,7 @@ import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Union
+from typing import List, Union
 
 import draccus
 import matplotlib.gridspec as gridspec
@@ -37,7 +37,9 @@ from prismatic.conf import VLAConfig, VLARegistry
 from prismatic.models import load_vla
 from prismatic.models.vlms import OpenVLA, PrismaticVLM
 from prismatic.vla import get_vla_dataset_and_collator
+from prismatic.vla.datasets.rlds.oxe.mixtures import OXE_NAMED_MIXTURES
 
+# === Setup ===
 DEVICE = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
 DATE_TIME = time.strftime("%Y_%m_%d-%H_%M_%S")
 
@@ -45,30 +47,29 @@ DATE_TIME = time.strftime("%Y_%m_%d-%H_%M_%S")
 @dataclass
 class VisualizeConfig:
     # fmt: off
-    # Pre-trained VLA model checkpoint to load
-    pretrained_checkpoint: Union[str, Path] = Path(
-        "/shared/karl/models/open_vla/lr-2e5+siglip-224px+mx-bridge+n1+b32+x7/step-080000-epoch-09-loss=0.0987.pt"
-    )
-
     vla: VLAConfig = field(
         default_factory=VLAConfig.get_choice_class(VLARegistry.LLAVA_REPRO_MX_BRIDGE.vla_id)
     )
 
-    # Directory containing dataset(s) to run evaluations on
-    data_root_dir: str = "/shared/karl/data"
+    # Model & Data Parameters
+    pretrained_checkpoint: Union[str, Path] = Path(             # Pretrained VLA checkpoint to load
+        "/shared/karl/models/open_vla/lr-2e5+siglip-224px+mx-bridge+n1+b32+x7/step-080000-epoch-09-loss=0.0987.pt"
+    )
+    data_root_dir: str = "/shared/karl/data"                    # Directory containing dataset(s) to evaluate
 
-    # Eval params
-    eval_samples: int = 1024                                    # Number of samples used for computing eval stats
-    eval_episodes: int = 5                                      # Number of episodes visualized in episode vis
-    max_episode_steps: int = 80                                 # Max steps visualized in episode visualizations
+    # Evaluation Parameters
+    eval_samples: int = 1024                                    # Number of samples to compute statistics over
+    eval_episodes: int = 5                                      # Number of episodes to visualize
+    max_episode_steps: int = 80                                 # Maximum number of steps to visualize per episode
+    eval_datasets: List[str] = field(default_factory=list)      # Individual datasets to visualize
 
-    # Model params
+    # Model Parameters
     action_dim: int = 7
 
     # HF Hub Credentials (for LLaMa-2)
     hf_token: Union[str, Path] = Path(".hf_token")              # Environment variable or Path to HF Token
 
-    # WandB setup
+    # Weights & Biases
     wandb_project: str = "openvla"                              # Name of W&B project to log to (use default!)
     wandb_entity: str = "stanford-voltron"                      # Name of entity to log under
 
@@ -101,11 +102,11 @@ def get_vla(checkpoint_path, cfg):
     return vla
 
 
-def make_data_loader(cfg, vla, train):
+def make_data_loader(cfg, vla, data_mix, train):
     image_transform = vla.vision_backbone.get_image_transform()
     vla_dataset, action_tokenizer, collator = get_vla_dataset_and_collator(
         cfg.data_root_dir,
-        cfg.vla.data_mix,
+        data_mix,
         image_transform=image_transform,
         tokenizer=vla.llm_backbone.get_tokenizer(),
         prompt_builder_fn=vla.llm_backbone.prompt_builder_fn,
@@ -124,11 +125,11 @@ def make_data_loader(cfg, vla, train):
     return dataloader, action_tokenizer
 
 
-def make_episode_dataset(cfg, vla, train):
+def make_episode_dataset(cfg, vla, data_mix, train):
     image_transform = vla.vision_backbone.get_image_transform()
     vla_dataset, action_tokenizer, _ = get_vla_dataset_and_collator(
         cfg.data_root_dir,
-        cfg.vla.data_mix,
+        data_mix,
         image_transform=image_transform,
         tokenizer=vla.llm_backbone.get_tokenizer(),
         prompt_builder_fn=vla.llm_backbone.prompt_builder_fn,
@@ -288,6 +289,30 @@ def eval_on_episodes(data_loader, vla, action_tokenizer, cfg):
     return logs
 
 
+def run_visualize_on_mixture(cfg, vla, data_mix, step):
+    # Get VLA dataset and collator for train and val w/ full data mixture
+    logging.info(f"Creating VLA Open-X Dataset with Mixture `{data_mix}`")
+    train_loader, action_tokenizer = make_data_loader(cfg, vla, data_mix, train=True)
+    val_loader, _ = make_data_loader(cfg, vla, data_mix, train=False)
+
+    # Dataset evaluations
+    logging.info("Running offline evaluations...")
+    train_metrics = eval_on_dataset(train_loader, vla, action_tokenizer, cfg)
+    wandb.log({f"train_{data_mix}/": train_metrics}, step=step)
+    val_metrics = eval_on_dataset(val_loader, vla, action_tokenizer, cfg)
+    wandb.log({f"val_{data_mix}/": val_metrics}, step=step)
+
+    # Evaluate on episodic data (for individual datasets only)
+    if data_mix not in OXE_NAMED_MIXTURES or len(OXE_NAMED_MIXTURES[data_mix]) == 1:
+        logging.info("Running episode evaluations...")
+        train_episode_loader, action_tokenizer = make_episode_dataset(cfg, vla, data_mix, train=True)
+        val_episode_loader, _ = make_episode_dataset(cfg, vla, data_mix, train=False)
+        train_episode_metrics = eval_on_episodes(train_episode_loader, vla, action_tokenizer, cfg)
+        wandb.log({f"train_rollouts_{data_mix}/": train_episode_metrics}, step=step)
+        val_episode_metrics = eval_on_episodes(val_episode_loader, vla, action_tokenizer, cfg)
+        wandb.log({f"val_rollouts_{data_mix}/": val_episode_metrics}, step=step)
+
+
 @draccus.wrap()
 def visualize_policy(cfg: VisualizeConfig) -> None:
     assert cfg.pretrained_checkpoint is not None, "cfg.pretrained_checkpoint must not be None!"
@@ -308,26 +333,19 @@ def visualize_policy(cfg: VisualizeConfig) -> None:
         # Get VLA policy
         vla = get_vla(checkpoint_path, cfg)
 
-        # Get VLA dataset and collator for train and val
-        logging.info(f"Creating VLA Open-X Dataset with Mixture `{cfg.vla.data_mix}`")
-        train_loader, action_tokenizer = make_data_loader(cfg, vla, train=True)
-        val_loader, _ = make_data_loader(cfg, vla, train=False)
+        # Run visualize script over training data mixture
+        train_data_mix = cfg.vla.data_mix
+        run_visualize_on_mixture(cfg, vla, train_data_mix, step)
 
-        # Dataset evaluations
-        logging.info("Running offline evaluations...")
-        train_metrics = eval_on_dataset(train_loader, vla, action_tokenizer, cfg)
-        wandb.log({"train/": train_metrics}, step=step)
-        val_metrics = eval_on_dataset(val_loader, vla, action_tokenizer, cfg)
-        wandb.log({"val/": val_metrics}, step=step)
-
-        # Evaluate on episodic data
-        logging.info("Running episode evaluations...")
-        train_episode_loader, action_tokenizer = make_episode_dataset(cfg, vla, train=True)
-        val_episode_loader, _ = make_episode_dataset(cfg, vla, train=False)
-        train_episode_metrics = eval_on_episodes(train_episode_loader, vla, action_tokenizer, cfg)
-        wandb.log({"train_rollouts/": train_episode_metrics}, step=step)
-        val_episode_metrics = eval_on_episodes(val_episode_loader, vla, action_tokenizer, cfg)
-        wandb.log({"val_rollouts/": val_episode_metrics}, step=step)
+        # Optionally run visualize script over individual datasets
+        train_datasets = [m[0] for m in OXE_NAMED_MIXTURES[cfg.vla.data_mix]]
+        for dataset in cfg.eval_datasets:
+            if dataset not in train_datasets:
+                logging.warning(
+                    f"Model has not been trained with dataset {dataset}. "
+                    f"Did you want to choose from {train_datasets}?"
+                )
+            run_visualize_on_mixture(cfg, vla, dataset, step)
 
 
 if __name__ == "__main__":
