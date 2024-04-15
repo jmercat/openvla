@@ -29,16 +29,17 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import tqdm
+import wandb
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from torch.utils.data import DataLoader
 
-import wandb
 from prismatic.conf import VLAConfig, VLARegistry
 from prismatic.models import load_vla
 from prismatic.models.vlms import OpenVLA, PrismaticVLM
 from prismatic.vla import get_vla_dataset_and_collator
 from prismatic.vla.datasets.rlds.oxe.mixtures import OXE_NAMED_MIXTURES
 
+# === Setup ===
 DEVICE = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
 DATE_TIME = time.strftime("%Y_%m_%d-%H_%M_%S")
 
@@ -46,31 +47,29 @@ DATE_TIME = time.strftime("%Y_%m_%d-%H_%M_%S")
 @dataclass
 class VisualizeConfig:
     # fmt: off
-    # Pre-trained VLA model checkpoint to load
-    pretrained_checkpoint: Union[str, Path] = Path(
-        "/shared/karl/models/open_vla/lr-2e5+siglip-224px+mx-bridge+n1+b32+x7/step-080000-epoch-09-loss=0.0987.pt"
-    )
-
     vla: VLAConfig = field(
         default_factory=VLAConfig.get_choice_class(VLARegistry.LLAVA_REPRO_MX_BRIDGE.vla_id)
     )
 
-    # Directory containing dataset(s) to run evaluations on
-    data_root_dir: str = "/shared/karl/data"
+    # Model & Data Parameters
+    pretrained_checkpoint: Union[str, Path] = Path(             # Pretrained VLA checkpoint to load
+        "/shared/karl/models/open_vla/lr-2e5+siglip-224px+mx-bridge+n1+b32+x7/step-080000-epoch-09-loss=0.0987.pt"
+    )
+    data_root_dir: str = "/shared/karl/data"                    # Directory containing dataset(s) to evaluate
 
-    # Eval params
-    eval_samples: int = 1024                                    # Number of samples used for computing eval stats
-    eval_episodes: int = 5                                      # Number of episodes visualized in episode vis
-    max_episode_steps: int = 80                                 # Max steps visualized in episode visualizations
-    eval_datasets: List[str] = field(default_factory=list)      # Which individual datasets to run visualization on
+    # Evaluation Parameters
+    eval_samples: int = 1024                                    # Number of samples to compute statistics over
+    eval_episodes: int = 5                                      # Number of episodes to visualize
+    max_episode_steps: int = 80                                 # Maximum number of steps to visualize per episode
+    eval_datasets: List[str] = field(default_factory=list)      # Individual datasets to visualize
 
-    # Model params
+    # Model Parameters
     action_dim: int = 7
 
     # HF Hub Credentials (for LLaMa-2)
     hf_token: Union[str, Path] = Path(".hf_token")              # Environment variable or Path to HF Token
 
-    # WandB setup
+    # Weights & Biases
     wandb_project: str = "openvla"                              # Name of W&B project to log to (use default!)
     wandb_entity: str = "stanford-voltron"                      # Name of entity to log under
 
