@@ -10,8 +10,7 @@ Usage:
         --pretrained_checkpoint <CHECKPOINT_PATH>
 
     # Octo:
-    python experiments/robot/eval_model_in_bridge_env.py \
-        --model_family octo
+    python experiments/robot/eval_model_in_bridge_env.py --model_family octo
 """
 
 import sys
@@ -25,7 +24,8 @@ import numpy as np
 
 from prismatic.conf import ModelConfig, ModelRegistry
 
-sys.path.append("./")  # hack so that the interpreter can find experiments.robot
+# TODO (@moojink) Hack so that the interpreter can find experiments.robot
+sys.path.append("./")
 from experiments.robot.utils import (
     get_action,
     get_image,
@@ -40,21 +40,20 @@ from experiments.robot.utils import (
 @dataclass
 class GenerateConfig:
     # fmt: off
-    model_family: str = "llava"
-
-    # Pre-trained VLA model checkpoint to load
-    pretrained_checkpoint: Union[str, Path] = Path(
-        "/scr/moojink/checkpoints/tri/reproduction-llava-v15+mx-bridge+n1+b32+x7/checkpoints/step-077500-epoch-00-loss=0.0488.pt"
-    )
 
     # ModelConfig from `prisma/conf/models.py`; override with --model.type `ModelRegistry.<MODEL>.model_id`
     model: ModelConfig = field(
-        default_factory=ModelConfig.get_choice_class(
-            ModelRegistry.REPRODUCTION_7B.model_id
-        )
+        default_factory=ModelConfig.get_choice_class(ModelRegistry.REPRODUCTION_7B.model_id)
+    )
+    model_family: str = "llava"                                 # Base VLM model family (for prompt builder)
+
+    # Model Parameters
+    pretrained_checkpoint: Union[str, Path] = Path(             # Pretrained VLA checkpoint to load
+        "/scr/moojink/checkpoints/tri/reproduction-llava-v15+mx-bridge+n1+b32+x7/checkpoints/"
+        "step-077500-epoch-00-loss=0.0488.pt"
     )
 
-    # Environment-specific variables
+    # Evaluation Environment Parameters
     max_episodes = 50                                           # Maximum number of rollouts
     max_steps = 50                                              # Maximum number of steps per rollout
     control_frequency = 5                                       # Robot control frequency in Hz
@@ -71,44 +70,52 @@ class GenerateConfig:
 
 
 @draccus.wrap()
-def main(cfg: GenerateConfig) -> None:
+def eval_model_in_bridge_env(cfg: GenerateConfig) -> None:
     assert cfg.pretrained_checkpoint is not None, "cfg.pretrained_checkpoint must not be None!"
-    # Get image resize size.
-    resize_size = get_image_resize_size(cfg)
-    # Load model.
+
+    # Load Model --> Get Expected Image Dimensions
     model = get_model(cfg)
+    resize_size = get_image_resize_size(cfg)
+
     # Initialize the WidowX environment.
     env = get_widowx_env()
-    # Start evaluation.
+
+    # === Start Evaluation ===
     task_label = ""
     episode_idx = 0
     while episode_idx < cfg.max_episodes:
-        # Get task description from user.
+        # Get Task Description from User
         task_label = get_next_task_label(task_label)
         rollout_images = []
-        # Reset environment.
+
+        # Reset Environment
         env.reset()
         env.start()
-        # Setup.
+
+        # Setup
         t = 0
         zero_action_count = 0
         step_duration = 1.0 / cfg.control_frequency
-        # Start episode.
+
+        # Start Episode
         input(f"Press Enter to start episode {episode_idx+1}...")
         last_tstamp = time.time()
         while t < cfg.max_steps:
             try:
-                # Get environment observations.
+                # Get Environment Observation
                 obs = env._get_obs()
                 rollout_images.append(obs["pixels"][0])
                 if time.time() > last_tstamp + step_duration:
                     print(f"t: {t}")
                     last_tstamp = time.time()
-                    # Get preprocessed image.
+
+                    # Get Preprocessed Image
                     img = get_image(obs, resize_size)
-                    # Query model to get action.
+
+                    # Query Model --> Get Action
                     action = get_action(cfg, model, img, task_label)
-                    # End episode early if the robot doesn't move at all for a few consecutive steps.
+
+                    # [Termination Check] End episode early if the robot doesn't move at all for a few consecutive steps
                     if np.isclose(np.linalg.norm(action), 1, atol=0.01) and np.linalg.norm(action[:6]) < 0.01:
                         zero_action_count += 1
                         if zero_action_count == 5:
@@ -116,20 +123,24 @@ def main(cfg: GenerateConfig) -> None:
                             break
                     else:
                         zero_action_count = 0
-                    # Execute action in environment.
+
+                    # Execute Action
                     tstamp_return_obs = last_tstamp + step_duration
                     print("action:", action)
-                    _, _, _, _ = env.step({"action": action, "tstamp_return_obs": tstamp_return_obs})
+                    env.step({"action": action, "tstamp_return_obs": tstamp_return_obs})
                     t += 1
+
             except Exception as e:
                 print(f"Caught exception: {e}")
                 break
-        # Save a replay GIF of the episode.
+
+        # Save a Replay GIF of the Episode
         save_rollout_gif(rollout_images, episode_idx)
-        # Redo episode or continue.
+
+        # Redo Episode or Continue...
         if input("Enter 'r' if you want to redo the episode, or press Enter to continue: ") != "r":
             episode_idx += 1
 
 
 if __name__ == "__main__":
-    main()
+    eval_model_in_bridge_env()

@@ -47,6 +47,8 @@ DATE_TIME = time.strftime("%Y_%m_%d-%H_%M_%S")
 @dataclass
 class VisualizeConfig:
     # fmt: off
+
+    # VLAConfig (`prismatic/conf/vla.py`); override with --vla.type `VLARegistry.<VLA>.vla_id`
     vla: VLAConfig = field(
         default_factory=VLAConfig.get_choice_class(VLARegistry.LLAVA_REPRO_MX_BRIDGE.vla_id)
     )
@@ -80,7 +82,6 @@ class VisualizeConfig:
 
 def get_checkpoint_paths(cfg):
     if cfg.pretrained_checkpoint.endswith(".pt"):
-        # Passed a single checkpoint
         return [cfg.pretrained_checkpoint]
     else:
         return sorted(glob.glob(os.path.join(cfg.pretrained_checkpoint, "*.pt")))
@@ -94,11 +95,12 @@ def get_vla(checkpoint_path, cfg):
     for param in vla.parameters():
         assert param.dtype == torch.float32, f"Loaded VLA parameter not in full precision: {param}"
 
-    # Cast to half precision.
+    # Cast to Half Precision (BF16)
     vla.vision_backbone.to(dtype=vla.vision_backbone.half_precision_dtype)
     vla.llm_backbone.to(dtype=vla.llm_backbone.half_precision_dtype)
     vla.to(dtype=vla.llm_backbone.half_precision_dtype)
     vla.to(DEVICE)
+
     return vla
 
 
@@ -114,14 +116,10 @@ def make_data_loader(cfg, vla, data_mix, train):
         shuffle_buffer_size=100000,
         train=train,
     )
-    # Create dataloader.
-    dataloader = DataLoader(
-        vla_dataset,
-        batch_size=1,  # currently only support generate() with batch size 1
-        collate_fn=collator,
-        num_workers=0,
-        shuffle=False,
-    )
+
+    # Create DataLoader =>> note that we only support `batch_size=1` during generation for now!
+    dataloader = DataLoader(vla_dataset, batch_size=1, collate_fn=collator, num_workers=0, shuffle=False)
+
     return dataloader, action_tokenizer
 
 
@@ -138,24 +136,20 @@ def make_episode_dataset(cfg, vla, data_mix, train):
         train=train,
         episodic=True,
     )
-    # Create dataloader.
-    dataloader = DataLoader(
-        vla_dataset,
-        batch_size=1,
-        num_workers=0,
-        shuffle=False,
-    )
+
+    # Create DataLoader
+    dataloader = DataLoader(vla_dataset, batch_size=1, num_workers=0, shuffle=False)
+
     return dataloader, action_tokenizer
 
 
 def compute_metrics(action_tokenizer, ground_truth_action_token_ids, predicted_action_token_ids):
-    """
-    Returns tuple (action tokens accuracy, L1 loss) given predicted and ground-truth action token IDs.
-    """
-    # Compute action tokens accuracy
+    """Returns tuple (action token accuracy, L1 loss) given predicted and ground-truth action token IDs."""
+
+    # Compute Action Token Accuracy
     actions_accuracy = (predicted_action_token_ids == ground_truth_action_token_ids).cpu().numpy()
 
-    # Compute L1 loss
+    # Compute L1 Loss
     ground_truth_actions = action_tokenizer.decode_token_ids_to_actions(ground_truth_action_token_ids.cpu().numpy())
     predicted_actions = action_tokenizer.decode_token_ids_to_actions(predicted_action_token_ids.cpu().numpy())
     l1_loss = (
@@ -166,22 +160,18 @@ def compute_metrics(action_tokenizer, ground_truth_action_token_ids, predicted_a
         .numpy()
     )
 
-    return {
-        "accuracy": actions_accuracy,
-        "l1_loss": l1_loss,
-    }
+    return {"accuracy": actions_accuracy, "l1_loss": l1_loss}
 
 
 def run_on_batch(batch, vla, action_dim):
     """
-    Evaluates model on input batch without using teacher forcing.
-    Leverages the model's `generate()` function.
-    We use greedy decoding here by passing `do_sample=False` to `generate()`.
+    Evaluates model on input batch *without* teacher forcing.
+
+    Leverages the VLA model's `generate()` function --> greedy decoding via `do_sample=False`.
     """
-    # Prepare inputs.
     inputs = copy.deepcopy(batch)
 
-    # Remove the action tokens from the prompt.
+    # Remove Action Tokens from Prompt
     ground_truth_action_token_ids = inputs["labels"][:, -1 - action_dim : -1]
     inputs["input_ids"] = inputs["input_ids"][:, : -action_dim - 1]
     inputs["labels"] = inputs["labels"][:, : -action_dim - 1]
@@ -190,27 +180,24 @@ def run_on_batch(batch, vla, action_dim):
     # Call `super().generate()` to generate action tokens w/o teacher forcing.
     generated_ids = super(PrismaticVLM, vla).generate(**inputs, max_new_tokens=action_dim, do_sample=False)
     predicted_action_token_ids = generated_ids[:, -action_dim:]
+
     return ground_truth_action_token_ids, predicted_action_token_ids
 
 
 def eval_on_dataset(data_loader, vla, action_tokenizer, cfg):
     metrics = None
-    with tqdm.tqdm(total=cfg.eval_samples, desc="Eval steps") as progress:
+    with tqdm.tqdm(total=cfg.eval_samples, desc="Evaluation Steps") as progress:
         for idx, batch in enumerate(data_loader):
-            # Prepare inputs and move them to device
+            # Prepare Inputs --> Move to Device
             batch.pop("dataset_names")
             for k in batch.keys():
                 batch[k] = batch[k].to(DEVICE)
                 if k == "pixel_values":
                     batch[k] = batch[k].to(dtype=vla.llm_backbone.half_precision_dtype)
 
-            # Generate actions via autoregressive sampling: via `generate()`
+            # Generate Actions via Autoregressive (Greedy) Decoding --> via `generate()`
             gt_actions, pred_actions = run_on_batch(batch, vla, cfg.action_dim)
-            batch_metrics = compute_metrics(
-                action_tokenizer,
-                gt_actions,
-                pred_actions,
-            )
+            batch_metrics = compute_metrics(action_tokenizer, gt_actions, pred_actions)
             if metrics is None:
                 metrics = batch_metrics
             else:
@@ -221,7 +208,7 @@ def eval_on_dataset(data_loader, vla, action_tokenizer, cfg):
             if idx == cfg.eval_samples - 1:
                 break
 
-    # compute averages globally and per dimension
+    # Compute Averages Globally and for each Dimension
     log_metrics = {}
     for key in metrics:
         log_metrics[f"avg_{key}"] = metrics[key].mean()
@@ -258,6 +245,7 @@ def plot_action_episodes(gt_actions, pred_actions):
             ax.plot(gt_actions[:, i], c="b", label="action")
             ax.plot(pred_actions[:, i], c="r", label="pred")
             ax.set_ylabel(f"dim {i}")
+
     return wandb.Image(wandb_figure.image)
 
 
@@ -272,6 +260,7 @@ def eval_on_episodes(data_loader, vla, action_tokenizer, cfg):
                     step[k] = step[k].to(DEVICE)
                     if k == "pixel_values":
                         step[k] = step[k].to(dtype=vla.llm_backbone.half_precision_dtype)
+
                 step["attention_mask"] = step["input_ids"].ne(vla.llm_backbone.get_tokenizer().pad_token_id)
 
                 gt_action_tokens, pred_action_tokens = run_on_batch(step, vla, cfg.action_dim)
@@ -283,9 +272,11 @@ def eval_on_episodes(data_loader, vla, action_tokenizer, cfg):
             logs[f"episode_{idx}"] = plot_action_episodes(
                 np.array(gt_episode_actions)[:, 0], np.array(pred_episode_actions)[:, 0]
             )
+
             progress.update()
             if idx == cfg.eval_episodes - 1:
                 break
+
     return logs
 
 
@@ -299,6 +290,7 @@ def run_visualize_on_mixture(cfg, vla, data_mix, step):
     logging.info("Running offline evaluations...")
     train_metrics = eval_on_dataset(train_loader, vla, action_tokenizer, cfg)
     wandb.log({f"train_{data_mix}/": train_metrics}, step=step)
+
     val_metrics = eval_on_dataset(val_loader, vla, action_tokenizer, cfg)
     wandb.log({f"val_{data_mix}/": val_metrics}, step=step)
 
@@ -307,8 +299,10 @@ def run_visualize_on_mixture(cfg, vla, data_mix, step):
         logging.info("Running episode evaluations...")
         train_episode_loader, action_tokenizer = make_episode_dataset(cfg, vla, data_mix, train=True)
         val_episode_loader, _ = make_episode_dataset(cfg, vla, data_mix, train=False)
+
         train_episode_metrics = eval_on_episodes(train_episode_loader, vla, action_tokenizer, cfg)
         wandb.log({f"train_rollouts_{data_mix}/": train_episode_metrics}, step=step)
+
         val_episode_metrics = eval_on_episodes(val_episode_loader, vla, action_tokenizer, cfg)
         wandb.log({f"val_rollouts_{data_mix}/": val_episode_metrics}, step=step)
 
@@ -316,7 +310,8 @@ def run_visualize_on_mixture(cfg, vla, data_mix, step):
 @draccus.wrap()
 def visualize_policy(cfg: VisualizeConfig) -> None:
     assert cfg.pretrained_checkpoint is not None, "cfg.pretrained_checkpoint must not be None!"
-    # Initialize WandB
+
+    # Initialize W&B
     wandb.init(
         entity=cfg.wandb_entity,
         project=cfg.wandb_project,
@@ -324,26 +319,25 @@ def visualize_policy(cfg: VisualizeConfig) -> None:
     )
 
     checkpoint_paths = get_checkpoint_paths(cfg)
-    logging.info(f"Evaluating {len(checkpoint_paths)} checkpoint paths: {checkpoint_paths}")
+    logging.info(f"Evaluating {len(checkpoint_paths)} Checkpoint Paths: {checkpoint_paths}")
     for checkpoint_path in checkpoint_paths:
-        # Get checkpoint step
+        # Get Checkpoint Step
         step = int(os.path.basename(checkpoint_path).split("-")[1])
         logging.info(f"Evaluating checkpoint for step {step}...")
 
         # Get VLA policy
         vla = get_vla(checkpoint_path, cfg)
 
-        # Run visualize script over training data mixture
+        # Run Visualize Script over Training Data Mixture
         train_data_mix = cfg.vla.data_mix
         run_visualize_on_mixture(cfg, vla, train_data_mix, step)
 
-        # Optionally run visualize script over individual datasets
+        # [Optional] Run Visualization over Individual Datasets
         train_datasets = [m[0] for m in OXE_NAMED_MIXTURES[cfg.vla.data_mix]]
         for dataset in cfg.eval_datasets:
             if dataset not in train_datasets:
                 logging.warning(
-                    f"Model has not been trained with dataset {dataset}. "
-                    f"Did you want to choose from {train_datasets}?"
+                    f"Model has not been trained with dataset {dataset}. Did you want to choose from {train_datasets}?"
                 )
             run_visualize_on_mixture(cfg, vla, dataset, step)
 
