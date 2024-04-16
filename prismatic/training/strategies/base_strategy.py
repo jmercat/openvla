@@ -249,6 +249,7 @@ class TrainingStrategy(ABC):
         action_tokenizer: ActionTokenizer,
         metrics: VLAMetrics,
         save_interval: int = 2500,
+        save_full_model: bool = True,
     ) -> None:
         """Run the VLA training loop for the given `dataset` and `collator`; log losses, action metrics to `metrics`."""
         assert isinstance(vla_dataset, IterableDataset), "VLA training expects an IterableDataset!"
@@ -351,7 +352,9 @@ class TrainingStrategy(ABC):
                 if (terminate := (self.max_steps is not None and metrics.global_step >= self.max_steps)) or (
                     (metrics.global_step % save_interval) == 0
                 ):
-                    self.save_checkpoint(metrics.run_dir, metrics.global_step, epoch, loss.item())
+                    self.save_checkpoint(
+                        metrics.run_dir, metrics.global_step, epoch, loss.item(), only_trainable=not save_full_model
+                    )
                     dist.barrier()
 
                     if terminate:
