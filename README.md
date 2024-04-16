@@ -317,12 +317,12 @@ sudo v4l2-ctl --list-devices
 /iris/u/moojink/widowx_control/scripts/run.sh -v 0 # *** CHANGE THE CAMERA INDEX BASED ON ABOVE OUTPUT ***
 ```
 
-**Note**: The second command will print a list of the cameras that the workstation has access to 
-(e.g.,`/dev/video0` and `/dev/video1`). If you don't see any cameras, they might not be connected to the workstation. 
+**Note**: The second command will print a list of the cameras that the workstation has access to
+(e.g.,`/dev/video0` and `/dev/video1`). If you don't see any cameras, they might not be connected to the workstation.
 
-Let's say you want to use the camera labeled as `/dev/video1`. Run the command below to launch the WidowX control stack 
-(e.g., in a tmux session). The `-v 1` arg tells the launcher script that you want the camera at index `1` to be mapped 
-to `camera0` in the robot infrastructure code. If you want to use `/dev/video0` instead of `/dev/video1`, then you 
+Let's say you want to use the camera labeled as `/dev/video1`. Run the command below to launch the WidowX control stack
+(e.g., in a tmux session). The `-v 1` arg tells the launcher script that you want the camera at index `1` to be mapped
+to `camera0` in the robot infrastructure code. If you want to use `/dev/video0` instead of `/dev/video1`, then you
 would use the argument `-v 0`.
 
 Now, in another Terminal, run the commands below. Modify arguments as needed:

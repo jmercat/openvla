@@ -10,9 +10,9 @@ import draccus
 import json_numpy
 import numpy as np
 import requests
+from droid.user_interface.eval_gui import EvalGUI
 from droid_utils import R6_to_euler
 from PIL import Image
-from droid.user_interface.eval_gui import EvalGUI
 
 json_numpy.patch()
 
@@ -23,7 +23,7 @@ class VLADroidEvalConfig:
     # VLA server parameters
     vla_host: str = "0.0.0.0"                   # Host for VLA server, default: localhost
     vla_port: int = 8000                        # Port on which VLA server is running
-    
+
     # VLA action parameters
     dataset_name: str = "droid"                 # Dataset name used for un-normalization key
 
