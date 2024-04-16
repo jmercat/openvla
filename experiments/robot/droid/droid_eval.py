@@ -12,7 +12,7 @@ import numpy as np
 import requests
 from droid_utils import R6_to_euler
 from PIL import Image
-from r2d2.user_interface.eval_gui import EvalGUI
+from droid.user_interface.eval_gui import EvalGUI
 
 json_numpy.patch()
 
@@ -20,12 +20,17 @@ json_numpy.patch()
 @dataclass
 class VLADroidEvalConfig:
     # fmt: off
-    # VLA server port
+    # VLA server parameters
+    vla_host: str = "0.0.0.0"                   # Host for VLA server, default: localhost
     vla_port: int = 8000                        # Port on which VLA server is running
+    
+    # VLA action parameters
+    dataset_name: str = "droid"                 # Dataset name used for un-normalization key
 
     # Environment parameters
     img_size: int = 224                         # Image resolution for VLA vision backbone
-    camera_key: str = "24514023_left"           # Key for retrieving camera observation
+    camera_key: str = "28451778_left"           # Key for retrieving camera observation
+    control_hz: int = 3                         # Control frequency for DROID environment
 
     # Misc
     verbose: bool = False                       # Whether to print out debug info
@@ -54,8 +59,8 @@ class OpenVLAPolicy:
         # Request action from VLA server
         forward_pass_time = time.time()
         action = requests.post(
-            f"http://0.0.0.0:{self.cfg.vla_port}/act",
-            json={"image": np.array(image), "instruction": self.instruction, "unnorm_key": "droid"},
+            f"http://{self.cfg.vla_host}:{self.cfg.vla_port}/act",
+            json={"image": np.array(image), "instruction": self.instruction, "unnorm_key": self.cfg.dataset_name},
         ).json()
         if self.cfg.verbose:
             logging.info(f"Action: {action}")
@@ -86,7 +91,7 @@ class OpenVLAPolicy:
 @draccus.wrap()
 def run_droid_eval(cfg: VLADroidEvalConfig):
     policy = OpenVLAPolicy(cfg)
-    EvalGUI(policy=policy)
+    EvalGUI(policy=policy, control_hz=cfg.control_hz)
 
 
 if __name__ == "__main__":
