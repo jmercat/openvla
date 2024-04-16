@@ -5,6 +5,7 @@ Simple script that runs DROID eval loop and pipes actions from VLA server to rob
 import logging
 import time
 from dataclasses import dataclass
+from typing import Optional
 
 import draccus
 import json_numpy
@@ -21,19 +22,20 @@ json_numpy.patch()
 class VLADroidEvalConfig:
     # fmt: off
     # VLA server parameters
-    vla_host: str = "0.0.0.0"                   # Host for VLA server, default: localhost
-    vla_port: int = 8000                        # Port on which VLA server is running
+    vla_host: str = "0.0.0.0"                    # Host for VLA server, default: localhost
+    vla_port: int = 8000                         # Port on which VLA server is running
 
     # VLA action parameters
-    dataset_name: str = "droid"                 # Dataset name used for un-normalization key
+    dataset_name: str = "droid"                  # Dataset name used for un-normalization key
 
     # Environment parameters
-    img_size: int = 224                         # Image resolution for VLA vision backbone
-    camera_key: str = "28451778_left"           # Key for retrieving camera observation
-    control_hz: int = 3                         # Control frequency for DROID environment
+    img_size: int = 224                          # Image resolution for VLA vision backbone
+    camera_key: str = "28451778_left"            # Key for retrieving camera observation
+    control_hz: int = 3                          # Control frequency for DROID environment
 
     # Misc
-    verbose: bool = False                       # Whether to print out debug info
+    verbose: bool = False                        # Whether to print out debug info
+    overwrite_instruction: Optional[str] = None  # Optionally hardcode language instruction
 
     # fmt: on
 
@@ -85,7 +87,14 @@ class OpenVLAPolicy:
         raise NotImplementedError("OpenVLA policies currently do not support goal conditioning.")
 
     def load_lang(self, text):
-        self.instruction = text
+        if self.cfg.overwrite_instruction is not None:
+            self.instruction = self.cfg.overwrite_instruction
+            logging.warning(
+                f"Overwriting provided instruction {text} with overwrite_instruction: {self.cfg.overwrite_instruction}\n"
+                " To use GUI instruction, unset --overwrite_instruction command line argument!"
+            )
+        else:
+            self.instruction = text
 
 
 @draccus.wrap()
