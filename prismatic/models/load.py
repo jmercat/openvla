@@ -127,6 +127,7 @@ def load_vla(
     overwatch.info(f"Loading from local checkpoint path `{model_path}`")
 
     # Assert that the checkpoint path looks like: `..../<RUN_ID>/checkpoints/<CHECKPOINT_DIR>`
+    model_path = str(model_path)
     assert os.path.isfile(model_path)
     assert model_path[-3:] == ".pt" and model_path.split("/")[-2] == "checkpoints" and len(model_path.split("/")) >= 3
     run_dir = Path("/".join(model_path.split("/")[:-2]))  # `..../<RUN_ID>`

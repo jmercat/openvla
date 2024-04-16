@@ -27,7 +27,7 @@ import torch.distributed as dist
 import yaml
 
 from prismatic.conf import VLAConfig, VLARegistry
-from prismatic.models import load
+from prismatic.models import load, load_vla
 from prismatic.overwatch import initialize_overwatch
 from prismatic.training import VLAMetrics, get_train_strategy
 from prismatic.util import set_global_seed
@@ -57,9 +57,13 @@ class TrainConfig:
     )
     run_root_dir: Path = Path("/mnt/fsx/x-openvla/runs")            # Path to directory to store logs & checkpoints
 
+    # (If resuming training from checkpoint) Path of model checkpoint to load before training
+    pretrained_checkpoint: Optional[Path] = None
+
     # Run Arguments
     stage: str = "vla-train"                                        # Train Stage (only `vla-train` supported for now)
     run_id: Optional[str] = None                                    # Run ID for logging, Weights & Biases
+    run_id_note: Optional[str] = None                               # Extra note for logging, Weights & Biases
     save_interval: int = 2500                                       # Interval for saving checkpoints (in steps)
     seed: int = 7                                                   # Random seed (for reproducibility)
 
@@ -113,6 +117,8 @@ def train(cfg: TrainConfig) -> None:
         if cfg.run_id is None
         else cfg.run_id
     )
+    if cfg.run_id_note is not None:
+        cfg.run_id += f"--{cfg.run_id_note}"
 
     # Start =>> Build Directories and Set Randomness
     overwatch.info('"Do or do not; there is no try."', ctx_level=1)
@@ -131,10 +137,15 @@ def train(cfg: TrainConfig) -> None:
     # TODO (siddk) :: Handle Automatic Resume from Crash Logic
     assert len(list((run_dir / "checkpoints").glob("*.pt"))) == 0, "Checkpoint directory is not empty; bailing out!"
 
-    # Load Base VLM (from `cfg.vla.base_vlm` ID or Path)
+    # Load VLA checkpoint (if resuming from training) or Base VLM otherwise (from `cfg.vla.base_vlm` ID or Path)
     #   =>> Note :: Verifies that all parameters are loaded in FP32 on load!
     overwatch.info(f"Loading Base VLM `{cfg.vla.base_vlm}` from ID/Path")
-    vlm = load(cfg.vla.base_vlm, hf_token=hf_token, load_for_training=True)
+    if cfg.pretrained_checkpoint is not None:
+        vlm = load_vla(cfg.pretrained_checkpoint, hf_token=hf_token, load_for_training=True)
+        save_full_model = True
+    else:
+        vlm = load(cfg.vla.base_vlm, hf_token=hf_token, load_for_training=True)
+        save_full_model = False
     for param in vlm.parameters():
         assert param.dtype == torch.float32, f"Loaded VLM parameter not in full precision: {param}"
 
@@ -194,7 +205,14 @@ def train(cfg: TrainConfig) -> None:
 
     # Run VLA Training
     overwatch.info("Starting VLA Training Loop")
-    train_strategy.run_vla_training(vla_dataset, collator, action_tokenizer, metrics, save_interval=cfg.save_interval)
+    train_strategy.run_vla_training(
+        vla_dataset,
+        collator,
+        action_tokenizer,
+        metrics,
+        save_interval=cfg.save_interval,
+        save_full_model=save_full_model,
+    )
 
     # Finalize
     overwatch.info("Done with Training =>> Finalizing Metrics")
