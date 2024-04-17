@@ -168,8 +168,11 @@ def eval_model_in_bridge_env(cfg: GenerateConfig) -> None:
                     obs, _, _, _, _ = env.step(action)
                     t += 1
 
-            except Exception as e:
-                print(f"Caught exception: {e}")
+            except (KeyboardInterrupt, Exception) as e:
+                if isinstance(e, KeyboardInterrupt):
+                    print("\nCaught KeyboardInterrupt: Terminating episode early.")
+                else:
+                    print(f"\nCaught exception: {e}")
                 break
 
         # Save a Replay GIF of the Episode
