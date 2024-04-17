@@ -40,8 +40,10 @@ RUN pip install \
     accelerate>=0.25.0 \
     draccus@git+https://github.com/dlwh/draccus \
     einops \
+    huggingface_hub \
     jsonlines \
     matplotlib \
+    pyyaml-include==1.4.1 \
     rich \
     sentencepiece \
     timm>=0.9.10 \
