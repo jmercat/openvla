@@ -815,6 +815,7 @@ def rh20t_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
 OXE_STANDARDIZATION_TRANSFORMS = {
     "bridge_oxe": bridge_oxe_dataset_transform,
     "bridge_orig": bridge_orig_dataset_transform,
+    "bridge_dataset": bridge_orig_dataset_transform,
     "ppgm": ppgm_dataset_transform,
     "ppgm_static": ppgm_dataset_transform,
     "ppgm_wrist": ppgm_dataset_transform,

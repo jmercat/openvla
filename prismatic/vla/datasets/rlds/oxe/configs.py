@@ -81,6 +81,13 @@ OXE_DATASET_CONFIGS = {
         "state_encoding": StateEncoding.POS_EULER,
         "action_encoding": ActionEncoding.EEF_POS,
     },
+    "bridge_dataset": {  # Original version of Bridge V2 from project website
+        "image_obs_keys": {"primary": "image_0", "secondary": "image_1", "wrist": None},
+        "depth_obs_keys": {"primary": None, "secondary": None, "wrist": None},
+        "state_obs_keys": ["EEF_state", None, "gripper_state"],
+        "state_encoding": StateEncoding.POS_EULER,
+        "action_encoding": ActionEncoding.EEF_POS,
+    },
     "ppgm": {  # Pre-trained Panda Grasping Model
         "image_obs_keys": {"primary": "static_image", "secondary": None, "wrist": "wrist_image"},
         "depth_obs_keys": {"primary": "static_depth_image", "secondary": None, "wrist": "wrist_depth_image"},
@@ -567,14 +574,14 @@ OXE_DATASET_CONFIGS = {
             "wrist": "image_wrist_1_depth",
         },
         "state_obs_keys": ["proprio"],
-        "proprio_encoding": StateEncoding.POS_EULER,
+        "state_encoding": StateEncoding.POS_EULER,
         "action_encoding": ActionEncoding.EEF_POS,
     },
     "dobbe": {
         "image_obs_keys": {"primary": None, "secondary": None, "wrist": "wrist_image"},
         "depth_obs_keys": {"primary": None, "secondary": None, "wrist": None},
         "state_obs_keys": ["proprio"],
-        "proprio_encoding": StateEncoding.POS_EULER,
+        "state_encoding": StateEncoding.POS_EULER,
         "action_encoding": ActionEncoding.EEF_POS,
     },
     "roboset": {
@@ -585,7 +592,7 @@ OXE_DATASET_CONFIGS = {
         },
         "depth_obs_keys": {"primary": None, "secondary": None, "wrist": None},
         "state_obs_keys": ["proprio"],
-        "proprio_encoding": StateEncoding.JOINT,
+        "state_encoding": StateEncoding.JOINT,
         "action_encoding": ActionEncoding.JOINT_POS,
     },
     "rh20t": {
@@ -596,7 +603,7 @@ OXE_DATASET_CONFIGS = {
         },
         "depth_obs_keys": {"primary": None, "secondary": None, "wrist": None},
         "state_obs_keys": ["proprio"],
-        "proprio_encoding": StateEncoding.POS_EULER,
+        "state_encoding": StateEncoding.POS_EULER,
         "action_encoding": ActionEncoding.EEF_POS,
     },
 }

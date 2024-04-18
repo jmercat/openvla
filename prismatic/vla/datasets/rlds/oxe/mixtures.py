@@ -168,9 +168,9 @@ OXE_NAMED_MIXTURES: Dict[str, List[Tuple[str, float]]] = {
         ## New Datasets in MagicSoup++
         ("bc_z", 0.2),                                          # Note: use v0.1.0 --> later versions broken
         ("fmb_dataset", 1.0),
-        ("dobbe", 1.0),
-        ("rh20t", 0.5),
-        ("droid", 1.0),
+        ("dobbe", 0.2),
+        ("rh20t", 0.2),
+        ("droid", 0.1),
     ],
 
     #   =>> TODO (moojink) :: Eventually revert from using "ppgm_static" + "ppgm_wrist" to just "ppgm"!
