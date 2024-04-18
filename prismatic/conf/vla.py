@@ -29,7 +29,7 @@ class VLAConfig(ChoiceRegistry):
     shuffle_buffer_size: int                        # Size of Shuffle Buffer (100K for Bridge, 1M for OXE)
 
     # Model Parameters
-    action_chunk_length: int = 1                    # Length of action chunks predicted by the model
+    action_chunk_length: int                        # Length of action chunks predicted by the model
 
     # Optimization Parameters
     epochs: int                                     # Epochs to Run (in case `max_steps` is not specified)
@@ -68,6 +68,9 @@ class Exp_LLaVa15_Bridge(VLAConfig):
     # Data Mixture Parameters
     data_mix: str = "bridge"
     shuffle_buffer_size: int = 256_000
+
+    # Model Parameters
+    action_chunk_length: int = 1
 
     # Optimization Parameters
     epochs: int = 1000
@@ -234,7 +237,7 @@ class VLARegistry(Enum):
     SIGLIP_224PX_MX_DROID = Exp_SigLIP_224px_DROID
 
     # [04/17] Action Chunk Experiments
-    SIGLIP_224PX_CHUNK4_MX_BRIDGE = Exp_SigLIP_224px_DROID
+    SIGLIP_224PX_CHUNK4_MX_BRIDGE = Exp_Chunk4_SigLIP_224px_Bridge
 
     @property
     def vla_id(self) -> str:
