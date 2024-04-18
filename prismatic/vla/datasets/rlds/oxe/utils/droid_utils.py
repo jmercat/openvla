@@ -68,7 +68,8 @@ def droid_baseact_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
     DROID dataset transformation for actions expressed in *base* frame of the robot.
     """
     dt = trajectory["action_dict"]["cartesian_velocity"][:, :3]
-    dR = rotmat_to_rot6d(euler_to_rmat(trajectory["action_dict"]["cartesian_velocity"][:, 3:6]))
+    dR = trajectory["action_dict"]["cartesian_velocity"][:, 3:6]
+    # dR = rotmat_to_rot6d(euler_to_rmat(trajectory["action_dict"]["cartesian_velocity"][:, 3:6]))
     trajectory["action"] = tf.concat(
         (
             dt,

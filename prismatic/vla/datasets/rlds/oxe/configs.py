@@ -553,6 +553,50 @@ OXE_DATASET_CONFIGS = {
         "depth_obs_keys": {"primary": None, "secondary": None, "wrist": None},
         "state_obs_keys": ["proprio"],
         "state_encoding": StateEncoding.POS_QUAT,
-        "action_encoding": ActionEncoding.EEF_R6,
+        "action_encoding": ActionEncoding.EEF_POS,
+    },
+    "fmb_dataset": {
+        "image_obs_keys": {
+            "primary": "image_side_1",
+            "secondary": "image_side_2",
+            "wrist": "image_wrist_1",
+        },
+        "depth_obs_keys": {
+            "primary": "image_side_1_depth",
+            "secondary": "image_side_2_depth",
+            "wrist": "image_wrist_1_depth",
+        },
+        "state_obs_keys": ["proprio"],
+        "proprio_encoding": StateEncoding.POS_EULER,
+        "action_encoding": ActionEncoding.EEF_POS,
+    },
+    "dobbe": {
+        "image_obs_keys": {"primary": None, "secondary": None, "wrist": "wrist_image"},
+        "depth_obs_keys": {"primary": None, "secondary": None, "wrist": None},
+        "state_obs_keys": ["proprio"],
+        "proprio_encoding": StateEncoding.POS_EULER,
+        "action_encoding": ActionEncoding.EEF_POS,
+    },
+    "roboset": {
+        "image_obs_keys": {
+            "primary": "image_left",
+            "secondary": "image_right",
+            "wrist": "image_wrist",
+        },
+        "depth_obs_keys": {"primary": None, "secondary": None, "wrist": None},
+        "state_obs_keys": ["proprio"],
+        "proprio_encoding": StateEncoding.JOINT,
+        "action_encoding": ActionEncoding.JOINT_POS,
+    },
+    "rh20t": {
+        "image_obs_keys": {
+            "primary": "image_front",
+            "secondary": "image_side_right",
+            "wrist": "image_wrist",
+        },
+        "depth_obs_keys": {"primary": None, "secondary": None, "wrist": None},
+        "state_obs_keys": ["proprio"],
+        "proprio_encoding": StateEncoding.POS_EULER,
+        "action_encoding": ActionEncoding.EEF_POS,
     },
 }
