@@ -5,16 +5,16 @@ Runs a model checkpoint in a real-world Bridge V2 environment.
 
 Usage:
     # VLA:
-    python experiments/robot/eval_model_in_bridge_env.py \
+    python experiments/robot/bridge/eval_model_in_bridge_env.py \
         --model.type <VLM_TYPE> \
         --pretrained_checkpoint <CHECKPOINT_PATH>
 
     # Octo:
-    python experiments/robot/eval_model_in_bridge_env.py --model_family octo \
+    python experiments/robot/bridge/eval_model_in_bridge_env.py --model_family octo \
          --blocking True --control_frequency 2.5
 
     # RT-1-X:
-    python experiments/robot/eval_model_in_bridge_env.py --model_family rt_1_x \
+    python experiments/robot/bridge/eval_model_in_bridge_env.py --model_family rt_1_x \
         --pretrained_checkpoint <CHECKPOINT_PATH>
 """
 
@@ -30,8 +30,8 @@ import numpy as np
 from prismatic.conf import ModelConfig, ModelRegistry
 
 # TODO (@moojink) Hack so that the interpreter can find experiments.robot
-sys.path.append("./")
-from experiments.robot.utils import (
+sys.path.append("../..")
+from experiments.robot.bridge.utils import (
     get_action,
     get_image_resize_size,
     get_model,

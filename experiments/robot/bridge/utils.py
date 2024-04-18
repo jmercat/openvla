@@ -16,8 +16,8 @@ from widowx_envs.widowx_env_service import WidowXClient, WidowXConfigs
 from prismatic.models import load_vla
 from prismatic.models.materialize import VISION_BACKBONES
 
-sys.path.append("./")  # hack so that the interpreter can find experiments.robot
-from experiments.robot.widowx_env import WidowXGym
+sys.path.append("../..")  # hack so that the interpreter can find experiments.robot
+from experiments.robot.bridge.widowx_env import WidowXGym
 
 # Initialize important constants and pretty-printing mode in NumPy.
 ACTION_DIM = 7
