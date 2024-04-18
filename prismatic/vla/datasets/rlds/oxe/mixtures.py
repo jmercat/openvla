@@ -170,7 +170,7 @@ OXE_NAMED_MIXTURES: Dict[str, List[Tuple[str, float]]] = {
         ("fmb_dataset", 1.0),
         ("dobbe", 0.2),
         ("rh20t", 0.2),
-        ("droid", 0.1),
+        ("droid", 0.06),
     ],
 
     #   =>> TODO (moojink) :: Eventually revert from using "ppgm_static" + "ppgm_wrist" to just "ppgm"!
