@@ -28,6 +28,9 @@ class VLAConfig(ChoiceRegistry):
     data_mix: str                                   # Open-X Embodiment Dataset =>> Unique Mixture ID (e.g., `bridge`)
     shuffle_buffer_size: int                        # Size of Shuffle Buffer (100K for Bridge, 1M for OXE)
 
+    # Model Parameters
+    action_chunk_length: int = 1                    # Length of action chunks predicted by the model
+
     # Optimization Parameters
     epochs: int                                     # Epochs to Run (in case `max_steps` is not specified)
     max_steps: Optional[int]                        # [Optional] Max Gradient Steps to Run (overrides `epochs`)
@@ -192,6 +195,18 @@ class Exp_SigLIP_224px_DROID(Exp_LLaVa15_Bridge):
     data_mix: str = "droid"
 
 
+# === [8 GPU] Action Chunking =>> SigLIP 224px + Bridge ===
+@dataclass
+class Exp_Chunk4_SigLIP_224px_Bridge(Exp_LLaVa15_Bridge):
+    vla_id: str = "siglip-224px-chunk4+mx-bridge"
+    base_vlm: Union[str, Path] = "siglip-224px+7b"
+    freeze_vision_backbone: bool = False
+
+    learning_rate: float = 2e-5
+
+    action_chunk_length: int = 4
+
+
 # === Define a VLA Registry Enum for Reference & Validation ===
 @unique
 class VLARegistry(Enum):
@@ -217,6 +232,9 @@ class VLARegistry(Enum):
 
     # [03/28] DROID Experiments
     SIGLIP_224PX_MX_DROID = Exp_SigLIP_224px_DROID
+
+    # [04/17] Action Chunk Experiments
+    SIGLIP_224PX_CHUNK4_MX_BRIDGE = Exp_SigLIP_224px_DROID
 
     @property
     def vla_id(self) -> str:

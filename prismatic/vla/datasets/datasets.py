@@ -36,7 +36,7 @@ class RLDSBatchTransform:
 
     def __call__(self, rlds_batch: Dict[str, Any]) -> Dict[str, Any]:
         """Converts a RLDS batch to the format expected by the OpenVLA collator/models."""
-        dataset_name, action = rlds_batch["dataset_name"], rlds_batch["action"][0]
+        dataset_name, action = rlds_batch["dataset_name"], rlds_batch["action"].flatten()
         img = Image.fromarray(rlds_batch["observation"]["image_primary"][0])
         lang = rlds_batch["task"]["language_instruction"].decode().lower()
 
@@ -73,6 +73,7 @@ class RLDSDataset(IterableDataset):
         data_mix: str,
         batch_transform: RLDSBatchTransform,
         resize_resolution: Tuple[int, int],
+        action_chunk_length: int = 1,
         shuffle_buffer_size: int = 256_000,
         train: bool = True,
     ) -> None:
@@ -98,9 +99,9 @@ class RLDSDataset(IterableDataset):
         )
         rlds_config = dict(
             traj_transform_kwargs=dict(
-                window_size=1,                                  # If we wanted to feed / predict more than one step
-                future_action_window_size=0,                    # For action chunking
-                skip_unlabeled=True,                            # Skip trajectories without language labels
+                window_size=1,                                      # If we wanted to feed / predict more than one step
+                future_action_window_size=action_chunk_length - 1,  # For action chunking
+                skip_unlabeled=True,                                # Skip trajectories without language labels
                 # image_augment_kwargs=dict(
                 #     random_resized_crop=dict(scale=[0.8, 1.0], ratio=[0.9, 1.1]),
                 #     random_brightness=[0.2],
