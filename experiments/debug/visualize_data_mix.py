@@ -6,7 +6,7 @@ from prismatic.vla.datasets.rlds.oxe.mixtures import OXE_NAMED_MIXTURES
 
 MIX_NAME = "oxe_magic_soup_plus"
 DATA_ROOT = "gs://rail-orca-central2/resize_256_256"
-N_VIDEOS = 3  # number of videos per dataset
+N_VIDEOS = 5  # number of videos per dataset
 
 assert MIX_NAME in OXE_NAMED_MIXTURES
 wandb.init(entity="stanford-voltron", project="vla_data_vis", name=f"VIS_{MIX_NAME}")
@@ -21,6 +21,6 @@ for dataset_info in tqdm.tqdm(OXE_NAMED_MIXTURES[MIX_NAME]):
     )
     for i, episode in enumerate(dataset.dataset):
         imgs = episode["observation"]["image_primary"].numpy()
-        wandb.log({dataset_name: wandb.Video(imgs, fps=5)})
+        wandb.log({dataset_name: wandb.Video(imgs[:, 0].transpose(0, 3, 1, 2), fps=5)})
         if i == N_VIDEOS - 1:
             break
