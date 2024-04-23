@@ -190,6 +190,7 @@ def pretrain(cfg: PretrainConfig) -> None:
         train_strategy=cfg.train_strategy,
         vlm=vlm,
         device_id=device_id,
+        stage=cfg.stage,
         epochs=cfg.epochs,
         max_steps=cfg.max_steps,
         global_batch_size=cfg.global_batch_size,
