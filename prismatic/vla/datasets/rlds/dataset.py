@@ -6,6 +6,7 @@ Core interface script for configuring and initializing RLDS datasets.
 TODO (siddk) :: Refactor?
 """
 
+import copy
 import inspect
 import json
 from functools import partial
@@ -352,6 +353,21 @@ def apply_trajectory_transforms(
     return dataset
 
 
+def apply_per_dataset_frame_transforms(
+    dataset: dl.DLataset,
+    chunk_filter_fn: Optional[Callable] = None,
+):
+    """
+    Optionally applied *per-dataset* transforms that happen at a frame level.
+
+    Args:
+        chunk_filter_fn (callable, optional): Filter function for chunks.
+    """
+    if chunk_filter_fn:
+        dataset = dataset.filter(chunk_filter_fn)
+    return dataset
+
+
 def apply_frame_transforms(
     dataset: dl.DLataset,
     *,
@@ -490,7 +506,10 @@ def make_interleaved_dataset(
     # Get Dataset Sizes
     dataset_sizes, all_dataset_statistics = [], {}
     for dataset_kwargs in dataset_kwargs_list:
-        _, dataset_statistics = make_dataset_from_rlds(**dataset_kwargs, train=train)
+        data_kwargs = copy.deepcopy(dataset_kwargs)
+        if "dataset_frame_transform_kwargs" in data_kwargs:
+            data_kwargs.pop("dataset_frame_transform_kwargs")
+        _, dataset_statistics = make_dataset_from_rlds(**data_kwargs, train=train)
         dataset_sizes.append(dataset_statistics["num_transitions"])
         all_dataset_statistics[dataset_kwargs["name"]] = dataset_statistics
 
@@ -522,6 +541,11 @@ def make_interleaved_dataset(
         threads_per_dataset,
         reads_per_dataset,
     ):
+        dataset_frame_transform_kwargs = (
+            dataset_kwargs.pop("dataset_frame_transform_kwargs")
+            if "dataset_frame_transform_kwargs" in dataset_kwargs
+            else None
+        )
         dataset, _ = make_dataset_from_rlds(
             **dataset_kwargs,
             train=train,
@@ -535,6 +559,7 @@ def make_interleaved_dataset(
             num_parallel_calls=threads,
             train=train,
         ).flatten(num_parallel_calls=threads)
+        dataset = apply_per_dataset_frame_transforms(dataset, **dataset_frame_transform_kwargs)
         datasets.append(dataset)
 
     # Interleave at the Frame Level

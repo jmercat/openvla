@@ -26,6 +26,8 @@ Configuration adopts the following structure:
 
 from enum import IntEnum
 
+from prismatic.vla.datasets.rlds.oxe.utils.droid_utils import zero_action_filter
+
 
 # Defines Proprioceptive State Encoding Schemes
 class StateEncoding(IntEnum):
@@ -561,6 +563,11 @@ OXE_DATASET_CONFIGS = {
         "state_obs_keys": ["proprio"],
         "state_encoding": StateEncoding.POS_QUAT,
         "action_encoding": ActionEncoding.EEF_POS,
+        "aux_kwargs": {
+            "dataset_frame_transform_kwargs": {
+                "chunk_filter_fn": zero_action_filter,
+            },
+        },
     },
     "fmb_dataset": {
         "image_obs_keys": {
