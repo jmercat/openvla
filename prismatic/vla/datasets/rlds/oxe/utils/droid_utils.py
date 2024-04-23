@@ -74,7 +74,7 @@ def droid_baseact_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
         (
             dt,
             dR,
-            trajectory["action_dict"]["gripper_position"],
+            1 - trajectory["action_dict"]["gripper_position"],
         ),
         axis=-1,
     )
