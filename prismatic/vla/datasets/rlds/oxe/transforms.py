@@ -757,10 +757,65 @@ def gnm_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
     return trajectory
 
 
+def fmb_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
+    # every input feature is batched, ie has leading batch dimension
+    trajectory["observation"]["proprio"] = tf.concat(
+        (
+            trajectory["observation"]["eef_pose"],
+            trajectory["observation"]["state_gripper_pose"][..., None],
+        ),
+        axis=-1,
+    )
+    return trajectory
+
+
+def dobbe_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
+    # every input feature is batched, ie has leading batch dimension
+    trajectory["observation"]["proprio"] = trajectory["observation"]["state"]
+    return trajectory
+
+
+def roboset_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
+    # every input feature is batched, ie has leading batch dimension
+    trajectory["observation"]["proprio"] = trajectory["observation"]["state"]
+
+    # gripper action is in -1...1 --> clip to 0...1, flip
+    gripper_action = trajectory["action"][:, -1:]
+    gripper_action = invert_gripper_actions(tf.clip_by_value(gripper_action, 0, 1))
+
+    trajectory["action"] = tf.concat(
+        (
+            trajectory["action"][:, :7],
+            gripper_action,
+        ),
+        axis=-1,
+    )
+    return trajectory
+
+
+def rh20t_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
+    trajectory["action"] = tf.concat(
+        (
+            trajectory["action"]["tcp_base"],
+            tf.cast(trajectory["action"]["gripper"][:, None], tf.float32),
+        ),
+        axis=-1,
+    )
+    trajectory["observation"]["proprio"] = tf.concat(
+        (
+            trajectory["observation"]["tcp_base"],
+            trajectory["observation"]["gripper_width"][..., None],
+        ),
+        axis=-1,
+    )
+    return trajectory
+
+
 # === Registry ===
 OXE_STANDARDIZATION_TRANSFORMS = {
     "bridge_oxe": bridge_oxe_dataset_transform,
     "bridge_orig": bridge_orig_dataset_transform,
+    "bridge_dataset": bridge_orig_dataset_transform,
     "ppgm": ppgm_dataset_transform,
     "ppgm_static": ppgm_dataset_transform,
     "ppgm_wrist": ppgm_dataset_transform,
@@ -816,4 +871,8 @@ OXE_STANDARDIZATION_TRANSFORMS = {
     "berkeley_gnm_cory_hall": gnm_dataset_transform,
     "berkeley_gnm_sac_son": gnm_dataset_transform,
     "droid": droid_baseact_transform,
+    "fmb_dataset": fmb_dataset_transform,
+    "dobbe": dobbe_dataset_transform,
+    "roboset": roboset_dataset_transform,
+    "rh20t": rh20t_dataset_transform,
 }

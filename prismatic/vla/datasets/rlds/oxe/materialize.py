@@ -69,6 +69,10 @@ def make_oxe_dataset_kwargs(
     # Specify Standardization Transform
     dataset_kwargs["standardize_fn"] = OXE_STANDARDIZATION_TRANSFORMS[dataset_name]
 
+    # Add any aux arguments
+    if "aux_kwargs" in dataset_kwargs:
+        dataset_kwargs.update(dataset_kwargs.pop("aux_kwargs"))
+
     return {"name": dataset_name, "data_dir": str(data_root_dir), **dataset_kwargs}
 
 
