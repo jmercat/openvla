@@ -42,7 +42,7 @@ class LaunchConfig:
 
     # OpenVLA Training Parameters
     vla_type: str = (                                                   # Unique VLA ID (specifies config)
-        VLARegistry.SIGLIP_224PX_MX_OXE_MAGIC_SOUP.vla_id
+        VLARegistry.DINOSIGLIP_224PX_MX_OXE_MAGIC_SOUP_PLUS.vla_id
     )
 
     # Updated Paths for Data / Runs (on Sagemaker Volume)

@@ -544,7 +544,7 @@ def make_interleaved_dataset(
         dataset_frame_transform_kwargs = (
             dataset_kwargs.pop("dataset_frame_transform_kwargs")
             if "dataset_frame_transform_kwargs" in dataset_kwargs
-            else None
+            else {}
         )
         dataset, _ = make_dataset_from_rlds(
             **dataset_kwargs,
