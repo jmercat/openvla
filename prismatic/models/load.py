@@ -150,6 +150,7 @@ def load_vla(
             raise ValueError(f"Couldn't find valid HF Hub Path `{hf_path = }`")
 
         # Identify Checkpoint to Load (via `step_to_load`)
+        step_to_load = f"{step_to_load:06d}" if step_to_load is not None else None
         valid_ckpts = tmpfs.glob(f"{hf_path}/checkpoints/step-{step_to_load if step_to_load is not None else ''}*.pt")
         if (len(valid_ckpts) == 0) or (step_to_load is not None and len(valid_ckpts) != 1):
             raise ValueError(f"Couldn't find a valid checkpoint to load from HF Hub Path `{hf_path}/checkpoints/")
@@ -167,7 +168,7 @@ def load_vla(
                 repo_id=VLA_HF_HUB_REPO, filename=f"{(relpath / 'dataset_statistics.json')!s}", cache_dir=cache_dir
             )
             checkpoint_pt = hf_hub_download(
-                repo_id=VLA_HF_HUB_REPO, filename=f"{(relpath / target_ckpt)!s}", cache_dir=cache_dir
+                repo_id=VLA_HF_HUB_REPO, filename=f"{(relpath / 'checkpoints' / target_ckpt)!s}", cache_dir=cache_dir
             )
 
     # Load VLA Config (and corresponding base VLM `ModelConfig`) from `config.json`
