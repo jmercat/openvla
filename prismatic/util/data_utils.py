@@ -19,6 +19,13 @@ def tree_map(fn: Callable, tree: dict) -> dict:
     return {k: tree_map(fn, v) if isinstance(v, dict) else fn(v) for k, v in tree.items()}
 
 
+def tree_map_with_key(fn: Callable, tree: dict, keys: Sequence = ()) -> dict:
+    """Maps a function over a nested dictionary."""
+    return {
+        k: tree_map_with_key(fn, v, (*keys, k)) if isinstance(v, dict) else fn((*keys, k), v) for k, v in tree.items()
+    }
+
+
 @dataclass
 class PaddedCollatorForLanguageModeling:
     model_max_length: int
