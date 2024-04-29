@@ -26,10 +26,13 @@ import draccus
 @dataclass
 class UploadConfig:
     # fmt: off
-    run_dir: Union[str, Path]               # Absolute path to top-level run directory (should contain `config.yaml`)
-    steps_to_upload: List[int] = field(     # Checkpoint steps to upload (subset of all checkpoints saved)
-        default_factory=lambda: [152500, 155000]
-    )
+    # run_dir: Union[str, Path]               # Absolute path to top-level run directory (should contain `config.yaml`)
+    # steps_to_upload: List[int] = field(     # Checkpoint steps to upload (subset of all checkpoints saved)
+    #     default_factory=lambda: [152500, 155000]
+    # )
+    run_dir: Union[str, Path] = "/mnt/fsx/x-openvla/runs/siglip-224px+mx-oxe-magic-soup+n8+b32+x7"
+    # run_dir: Union[str, Path] = "/mnt/fsx/x-openvla/runs/prism-dinosiglip-224px+mx-oxe-magic-soup-plus+n8+b32+x7"
+    steps_to_upload: List[int] = field(default_factory=lambda: [72500])
 
     model_type: str = "pretrained"          # Model type in < pretrained | finetuned >
 
@@ -64,7 +67,7 @@ def upload(cfg: UploadConfig) -> None:
     checkpoint_dir = cfg.run_dir / "checkpoints"
     for step in cfg.steps_to_upload:
         print(f"\t=>> Uploading Step {step} Checkpoint")
-        matches = list(checkpoint_dir.glob(f"*{step}*"))
+        matches = list(checkpoint_dir.glob(f"*{step:06d}*"))
         assert len(matches) == 1, f"Found more than one checkpoint for step {step} =>> `{matches}`!"
 
         # Upload
