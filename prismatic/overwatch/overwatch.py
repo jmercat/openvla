@@ -7,6 +7,7 @@ Utility class for creating a centralized/standardized logger (built on Rich) and
 import logging
 import logging.config
 import os
+from contextlib import nullcontext
 from logging import LoggerAdapter
 from typing import Any, Callable, ClassVar, Dict, MutableMapping, Tuple, Union
 
@@ -123,11 +124,11 @@ class PureOverwatch:
 
     @property
     def rank_zero_first(self) -> Callable[..., Any]:
-        return self.get_identity_ctx()
+        return nullcontext
 
     @property
     def local_zero_first(self) -> Callable[..., Any]:
-        return self.get_identity_ctx()
+        return nullcontext
 
     @staticmethod
     def is_rank_zero() -> bool:
