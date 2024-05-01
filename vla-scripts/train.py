@@ -16,6 +16,7 @@ Run with:
 """
 
 import json
+import re
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -57,8 +58,10 @@ class TrainConfig:
     )
     run_root_dir: Path = Path("/mnt/fsx/x-openvla/runs")            # Path to directory to store logs & checkpoints
 
-    # (If resuming training from checkpoint) Path of model checkpoint to load before training
-    pretrained_checkpoint: Optional[Path] = None
+    # Resume Run Parameters
+    pretrained_checkpoint: Optional[Path] = None                    # Absolute Path to Checkpoint
+    resume_step: Optional[int] = None                               # Global Step to Resume (should match checkpoint)
+    resume_epoch: Optional[int] = None                              # Epoch to Resume (should match checkpoint)
 
     # Run Arguments
     stage: str = "vla-train"                                        # Train Stage (only `vla-train` supported for now)
@@ -134,18 +137,21 @@ def train(cfg: TrainConfig) -> None:
             yaml_cfg = yaml.safe_load(f_yaml)
             json.dump(yaml_cfg, f_json, indent=2)
 
-    # TODO (siddk) :: Handle Automatic Resume from Crash Logic
-    assert len(list((run_dir / "checkpoints").glob("*.pt"))) == 0, "Checkpoint directory is not empty; bailing out!"
-
     # Load VLA checkpoint (if resuming from training) or Base VLM otherwise (from `cfg.vla.base_vlm` ID or Path)
     #   =>> Note :: Verifies that all parameters are loaded in FP32 on load!
     overwatch.info(f"Loading Base VLM `{cfg.vla.base_vlm}` from ID/Path")
     if cfg.pretrained_checkpoint is not None:
+        # [Validate] Pretrained Checkpoint `step` and `epoch` should match `resume_step` and `resume_epoch`
+        #   =>> Note :: We make developers pass in `resume_*` arguments as an extra sanity check!
+        assert int(re.search("step-(.+?)-", cfg.pretrained_checkpoint.name).group(1)) == cfg.resume_step
+        assert int(re.search("epoch-(.+?)-", cfg.pretrained_checkpoint.name).group(1)) == cfg.resume_epoch
+
         vlm = load_vla(cfg.pretrained_checkpoint, hf_token=hf_token, load_for_training=True)
-        save_full_model = True
+
     else:
         vlm = load(cfg.vla.base_vlm, hf_token=hf_token, load_for_training=True)
-        save_full_model = False
+
+    # [Validate] Model should be in Full Precision!
     for param in vlm.parameters():
         assert param.dtype == torch.float32, f"Loaded VLM parameter not in full precision: {param}"
 
@@ -201,6 +207,8 @@ def train(cfg: TrainConfig) -> None:
         draccus.encode(cfg),
         wandb_project=cfg.wandb_project,
         wandb_entity=cfg.wandb_entity,
+        resume_step=cfg.resume_step,
+        resume_epoch=cfg.resume_epoch,
     )
 
     # Run VLA Training
@@ -211,7 +219,6 @@ def train(cfg: TrainConfig) -> None:
         action_tokenizer,
         metrics,
         save_interval=cfg.save_interval,
-        save_full_model=save_full_model,
     )
 
     # Finalize

@@ -8,7 +8,7 @@ Run with: `python vla-scripts/sagemaker/launch.py <ARGS>`
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 
 import draccus
 import sagemaker
@@ -53,6 +53,14 @@ class LaunchConfig:
         "/opt/ml/input/data/training/x-openvla/runs"
     )
 
+    # Resume Run Parameters
+    pretrained_checkpoint: Optional[str] = (
+        "/opt/ml/input/data/training/x-openvla/runs/prism-dinosiglip-224px+mx-oxe-magic-soup-plus+n8+b32+x7/"
+        "checkpoints/step-097500-epoch-13-loss=0.6934.pt"
+    )
+    resume_step: Optional[int] = 97500
+    resume_epoch: Optional[int] = 13
+
     # Sagemaker Job Parameters
     entry_point: str = "vla-scripts/train.py"                           # Entry Point for Training
     input_source: str = "lustre"                                        # Data source in < lustre >
@@ -87,7 +95,14 @@ def launch(cfg: LaunchConfig) -> None:
     print(f"[*] Assembling Job Parameters =>> VLA Type: `{cfg.vla_type}`")
     assert cfg.input_source == "lustre", f"Found `{cfg.input_source = }`; we currently only support `lustre`!"
     train_fs = FileSystemInput(**LUSTRE_PARAMETERS)
-    hyperparameters = {"vla.type": cfg.vla_type, "data_root_dir": cfg.data_root_dir, "run_root_dir": cfg.run_root_dir}
+    hyperparameters = {
+        "vla.type": cfg.vla_type,
+        "data_root_dir": cfg.data_root_dir,
+        "run_root_dir": cfg.run_root_dir,
+        "pretrained_checkpoint": cfg.pretrained_checkpoint,
+        "resume_step": cfg.resume_step,
+        "resume_epoch": cfg.resume_epoch,
+    }
 
     # Launch!
     print("[*] Creating Sagemaker Estimator =>> Launching!")
@@ -112,6 +127,16 @@ def launch(cfg: LaunchConfig) -> None:
         max_run=60 * 60 * 24 * cfg.max_days,
         distribution={"torch_distributed": {"enabled": True}},
         disable_profiler=True,
+        tags=[
+            {
+                "Key": "tri.project",
+                "Value": "LBM:PJ-0109"
+            },
+            {
+                "Key": "tri.owner.email",
+                "Value": "siddharth.karamcheti@tri.global"
+            },
+        ]
     )
     estimator.fit(inputs={"training": train_fs if not cfg.debug else "file:///mnt/fsx/"})
 

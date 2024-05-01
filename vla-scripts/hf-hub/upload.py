@@ -30,9 +30,9 @@ class UploadConfig:
     # steps_to_upload: List[int] = field(     # Checkpoint steps to upload (subset of all checkpoints saved)
     #     default_factory=lambda: [152500, 155000]
     # )
-    run_dir: Union[str, Path] = "/mnt/fsx/x-openvla/runs/siglip-224px+mx-oxe-magic-soup+n8+b32+x7"
-    # run_dir: Union[str, Path] = "/mnt/fsx/x-openvla/runs/prism-dinosiglip-224px+mx-oxe-magic-soup-plus+n8+b32+x7"
-    steps_to_upload: List[int] = field(default_factory=lambda: [72500])
+    # run_dir: Union[str, Path] = "/mnt/fsx/x-openvla/runs/siglip-224px+mx-oxe-magic-soup+n8+b32+x7"
+    run_dir: Union[str, Path] = "/mnt/fsx/x-openvla/runs/prism-dinosiglip-224px+mx-oxe-magic-soup-plus+n8+b32+x7"
+    steps_to_upload: List[int] = field(default_factory=lambda: [97500])
 
     model_type: str = "pretrained"          # Model type in < pretrained | finetuned >
 
