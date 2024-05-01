@@ -20,8 +20,9 @@ import logging
 import os
 import time
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
-from typing import List, Union
+from typing import List, Optional, Union
 
 import draccus
 import matplotlib.gridspec as gridspec
@@ -29,13 +30,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import tqdm
-import wandb
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from torch.utils.data import DataLoader
 
+import wandb
 from prismatic.conf import VLAConfig, VLARegistry
 from prismatic.models import load_vla
 from prismatic.models.vlms import OpenVLA, PrismaticVLM
+from prismatic.util.data_utils import tree_map_with_key
 from prismatic.vla import get_vla_dataset_and_collator
 from prismatic.vla.datasets.rlds.oxe.mixtures import OXE_NAMED_MIXTURES
 
@@ -64,6 +66,7 @@ class VisualizeConfig:
     eval_episodes: int = 5                                      # Number of episodes to visualize
     max_episode_steps: int = 80                                 # Maximum number of steps to visualize per episode
     eval_datasets: List[str] = field(default_factory=list)      # Individual datasets to visualize
+    eval_steps: Optional[List[int]] = None                      # List of checkpoint steps to evaluate
 
     # Model Parameters
     action_dim: int = 7
@@ -87,11 +90,11 @@ def get_checkpoint_paths(cfg):
         return sorted(glob.glob(os.path.join(cfg.pretrained_checkpoint, "*.pt")))
 
 
-def get_vla(checkpoint_path, cfg):
+def get_vla(checkpoint_path, cfg, step):
     """Loads and returns a VLA model from checkpoint."""
     logging.info(f"Loading VLA from checkpoint: {checkpoint_path}")
     hf_token = cfg.hf_token.read_text().strip() if isinstance(cfg.hf_token, Path) else os.environ[cfg.hf_token]
-    vla: OpenVLA = load_vla(checkpoint_path, hf_token=hf_token, load_for_training=False)
+    vla: OpenVLA = load_vla(checkpoint_path, hf_token=hf_token, load_for_training=False, step_to_load=step)
     for param in vla.parameters():
         assert param.dtype == torch.float32, f"Loaded VLA parameter not in full precision: {param}"
 
@@ -184,16 +187,20 @@ def run_on_batch(batch, vla, action_dim):
     return ground_truth_action_token_ids, predicted_action_token_ids
 
 
+def set_device_precision(keys, value, vla):
+    value = value.to(DEVICE)
+    if "pixel_values" in keys:
+        value = value.to(dtype=vla.llm_backbone.half_precision_dtype)
+    return value
+
+
 def eval_on_dataset(data_loader, vla, action_tokenizer, cfg):
     metrics = None
     with tqdm.tqdm(total=cfg.eval_samples, desc="Evaluation Steps") as progress:
         for idx, batch in enumerate(data_loader):
             # Prepare Inputs --> Move to Device
             batch.pop("dataset_names")
-            for k in batch.keys():
-                batch[k] = batch[k].to(DEVICE)
-                if k == "pixel_values":
-                    batch[k] = batch[k].to(dtype=vla.llm_backbone.half_precision_dtype)
+            batch = tree_map_with_key(partial(set_device_precision, vla=vla), batch)
 
             # Generate Actions via Autoregressive (Greedy) Decoding --> via `generate()`
             gt_actions, pred_actions = run_on_batch(batch, vla, cfg.action_dim)
@@ -256,10 +263,7 @@ def eval_on_episodes(data_loader, vla, action_tokenizer, cfg):
             gt_episode_actions, pred_episode_actions = [], []
             for step in tqdm.tqdm(episode[: cfg.max_episode_steps]):
                 step.pop("dataset_name")
-                for k in step.keys():
-                    step[k] = step[k].to(DEVICE)
-                    if k == "pixel_values":
-                        step[k] = step[k].to(dtype=vla.llm_backbone.half_precision_dtype)
+                step = tree_map_with_key(partial(set_device_precision, vla=vla), step)
 
                 step["attention_mask"] = step["input_ids"].ne(vla.llm_backbone.get_tokenizer().pad_token_id)
 
@@ -307,6 +311,10 @@ def run_visualize_on_mixture(cfg, vla, data_mix, step):
         wandb.log({f"val_rollouts_{data_mix}/": val_episode_metrics}, step=step)
 
 
+def ckpt_path_to_step(checkpoint_path):
+    return int(os.path.basename(checkpoint_path).split("-")[1])
+
+
 @draccus.wrap()
 def visualize_policy(cfg: VisualizeConfig) -> None:
     assert cfg.pretrained_checkpoint is not None, "cfg.pretrained_checkpoint must not be None!"
@@ -318,15 +326,25 @@ def visualize_policy(cfg: VisualizeConfig) -> None:
         name=f"VIS-{cfg.vla.vla_id}-{DATE_TIME}",
     )
 
-    checkpoint_paths = get_checkpoint_paths(cfg)
-    logging.info(f"Evaluating {len(checkpoint_paths)} Checkpoint Paths: {checkpoint_paths}")
-    for checkpoint_path in checkpoint_paths:
-        # Get Checkpoint Step
-        step = int(os.path.basename(checkpoint_path).split("-")[1])
+    if os.path.exists(cfg.pretrained_checkpoint):
+        # Given path is local -- read checkpoints from local directory
+        eval_checkpoint_paths = get_checkpoint_paths(cfg)
+        eval_steps = [ckpt_path_to_step(p) for p in eval_checkpoint_paths]
+    else:
+        # Assume given path is from HF Hub
+        assert cfg.eval_steps is not None, "Need to give eval steps for loading from HF Hub"
+        eval_checkpoint_paths = [cfg.pretrained_checkpoint for _ in range(len(cfg.eval_steps))]
+        eval_steps = cfg.eval_steps
+
+    logging.info(f"Evaluating {len(eval_checkpoint_paths)} Checkpoint Paths: {eval_checkpoint_paths}")
+    for checkpoint_path, step in zip(eval_checkpoint_paths, eval_steps):
+        if cfg.eval_steps is not None and step not in cfg.eval_steps:
+            continue
+
         logging.info(f"Evaluating checkpoint for step {step}...")
 
         # Get VLA policy
-        vla = get_vla(checkpoint_path, cfg)
+        vla = get_vla(checkpoint_path, cfg, step)
 
         # Run Visualize Script over Training Data Mixture
         train_data_mix = cfg.vla.data_mix
