@@ -129,7 +129,9 @@ class FSDPStrategy(TrainingStrategy):
 
                 # Save Checkpoint & Copy Latest to `latest-checkpoint.pt`
                 torch.save({"model": model_state_dicts}, checkpoint_path)
-                shutil.copy(checkpoint_path, checkpoint_dir / "latest-checkpoint.pt")
+
+                # TODO (siddk) :: This breaks w/ Sagemaker default permissions (root vs. <user>)... skip?
+                # shutil.copy(checkpoint_path, checkpoint_dir / "latest-checkpoint.pt")
 
     def run_setup(self, run_dir: Path, n_train_examples: int) -> None:
         # Iteratively Assemble FSDP Wrapping Policy by fetching the wrapping policies for each backbone/constituent

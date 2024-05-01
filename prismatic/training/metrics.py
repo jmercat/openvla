@@ -216,6 +216,8 @@ class VLAMetrics:
         wandb_entity: Optional[str] = "stanford-voltron",
         grad_accumulation_steps: int = 1,
         window_size: int = 1,
+        resume_step: Optional[int] = None,
+        resume_epoch: Optional[int] = None,
     ) -> None:
         self.run_id, self.run_dir, self.hparams = run_id, run_dir, hparams
 
@@ -236,7 +238,9 @@ class VLAMetrics:
             self.trackers.append(tracker)
 
         # Create Universal Metrics Buffers
-        self.global_step, self.epoch, self.start_time, self.step_start_time = 0, 0, time.time(), time.time()
+        self.global_step = 0 if resume_step is None else resume_step
+        self.epoch = 0 if resume_epoch is None else resume_epoch
+        self.start_time, self.step_start_time = time.time(), time.time()
         self.state = {
             "loss_raw": deque(maxlen=grad_accumulation_steps),
             "loss": deque(maxlen=window_size),

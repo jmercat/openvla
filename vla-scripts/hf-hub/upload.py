@@ -64,7 +64,7 @@ def upload(cfg: UploadConfig) -> None:
     checkpoint_dir = cfg.run_dir / "checkpoints"
     for step in cfg.steps_to_upload:
         print(f"\t=>> Uploading Step {step} Checkpoint")
-        matches = list(checkpoint_dir.glob(f"*{step}*"))
+        matches = list(checkpoint_dir.glob(f"*{step:06d}*"))
         assert len(matches) == 1, f"Found more than one checkpoint for step {step} =>> `{matches}`!"
 
         # Upload
