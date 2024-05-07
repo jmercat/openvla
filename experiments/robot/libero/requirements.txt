@@ -1,0 +1,15 @@
+ hydra-core
+ numpy
+ wandb
+ easydict
+ transformers
+ opencv-python
+ robomimic
+ einops
+ thop
+ robosuite
+ bddl
+ future
+ matplotlib
+ cloudpickle
+ gym
