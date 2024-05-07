@@ -199,7 +199,8 @@ class Exp_DinoSigLIP_224px_OXE_Magic_Soup_Plus(Exp_LLaVa15_Bridge):
     base_vlm: Union[str, Path] = "prism-dinosiglip-224px+7b"
     freeze_vision_backbone: bool = False
 
-    data_mix: str = "oxe_magic_soup_plus"
+    # data_mix: str = "oxe_magic_soup_plus"
+    data_mix: str = "oxe_magic_soup_plus_minus"
 
     expected_world_size: int = 64
     global_batch_size: int = 2048
