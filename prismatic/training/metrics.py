@@ -6,15 +6,15 @@ endpoints (e.g., JSONL local logs, Weights & Biases).
 """
 
 import time
-from collections import deque
+from collections import defaultdict, deque
 from pathlib import Path
 from typing import Any, Dict, Optional, Protocol, Tuple, Union
 
 import jsonlines
 import numpy as np
 import torch
-import wandb
 
+import wandb
 from prismatic.overwatch import initialize_overwatch
 
 # Initialize Overwatch =>> Wraps `logging.Logger`
@@ -250,6 +250,9 @@ class VLAMetrics:
             "lr": [],
         }
 
+        # Created metrics buffers for individual tracked datasets
+        self.dataset_trackers = defaultdict(lambda: VLAMetrics([], "", "", {}))
+
     def log(self, global_step: int, metrics: Dict[str, Union[int, float]]) -> None:
         for tracker in self.trackers:
             tracker.write(global_step, metrics)
@@ -299,6 +302,9 @@ class VLAMetrics:
             else:
                 self.state[key].append(value.detach())
 
+    def commit_for_dataset(self, dataset_name: str, **kwargs) -> None:
+        self.dataset_trackers[dataset_name].commit(**kwargs)
+
     @overwatch.rank_zero_only
     def push(self) -> str:
         # Note :: Raw Loss is an Average over Gradient Accumulation Steps --> No Smoothing!
@@ -308,6 +314,16 @@ class VLAMetrics:
         action_accuracy = torch.stack(list(self.state["action_accuracy"])).mean().item()
         step_time, lr = np.mean(list(self.state["step_time"])), self.state["lr"][-1]
         status = self.get_status(loss)
+
+        # Get metrics per dataset
+        dataset_metrics = {}
+        for ds, tracker in self.dataset_trackers.items():
+            dataset_metrics.update(
+                {
+                    f"{ds}/L1 Loss": torch.stack(list(tracker.state["l1_loss"])).mean().item(),
+                    f"{ds}/Action Token Accuracy": torch.stack(list(tracker.state["action_accuracy"])).mean().item(),
+                }
+            )
 
         # Fire to Trackers
         prefix = "VLA Train"
@@ -322,6 +338,7 @@ class VLAMetrics:
                 f"{prefix}/Loss (Raw)": loss_raw,
                 f"{prefix}/Learning Rate": lr,
                 f"{prefix}/Step Time": step_time,
+                **dataset_metrics,
             },
         )
         return status

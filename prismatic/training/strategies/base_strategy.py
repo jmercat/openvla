@@ -331,6 +331,30 @@ class TrainingStrategy(ABC):
                 # Commit Metrics
                 metrics.commit(action_accuracy=action_accuracy, l1_loss=action_l1_loss, update_step_time=True)
 
+                # Compute metrics per dataset --> only on rank_zero since we don't log them on other workers anyways
+                if overwatch.is_rank_zero():
+                    datasets = set(batch["dataset_names"])
+                    if len(datasets) > 1:
+                        for ds in datasets:
+                            ds_mask = torch.tensor([elem == ds for elem in batch["dataset_names"]])
+                            action_accuracy_ds = correct_preds[ds_mask].sum().float() / mask[ds_mask].sum().float()
+                            continuous_actions_pred_ds = torch.tensor(
+                                action_tokenizer.decode_token_ids_to_actions(
+                                    action_preds[ds_mask][mask[ds_mask]].cpu().numpy()
+                                )
+                            )
+                            continuous_actions_gt_ds = torch.tensor(
+                                action_tokenizer.decode_token_ids_to_actions(
+                                    action_gt[ds_mask][mask[ds_mask]].cpu().numpy()
+                                )
+                            )
+                            action_l1_loss_ds = torch.nn.functional.l1_loss(
+                                continuous_actions_pred_ds, continuous_actions_gt_ds
+                            )
+                            metrics.commit_for_dataset(
+                                dataset_name=ds.decode(), action_accuracy=action_accuracy_ds, l1_loss=action_l1_loss_ds
+                            )
+
                 # === Gradient Step ===
 
                 # Clip Gradients --> this is custom, per-strategy because of DDP vs. FSDP locality assumptions
