@@ -209,6 +209,17 @@ class Exp_DinoSigLIP_224px_OXE_Magic_Soup_Plus(Exp_LLaVa15_Bridge):
     learning_rate: float = 2e-5
 
 
+# === [8 GPU] SigLIP 224px + LIBERO-Spatial ===
+@dataclass
+class Exp_SigLIP_224px_LIBERO_Spatial(Exp_LLaVa15_Bridge):
+    vla_id: str = "siglip-224px+mx-libero_spatial"
+    base_vlm: Union[str, Path] = "siglip-224px+7b"
+    freeze_vision_backbone: bool = False
+
+    data_mix: str = "libero_spatial"
+    learning_rate: float = 2e-5
+
+
 # === Define a VLA Registry Enum for Reference & Validation ===
 @unique
 class VLARegistry(Enum):
@@ -237,6 +248,9 @@ class VLARegistry(Enum):
 
     # [04/18] OXE Magic Soup Plus Run
     DINOSIGLIP_224PX_MX_OXE_MAGIC_SOUP_PLUS = Exp_DinoSigLIP_224px_OXE_Magic_Soup_Plus
+
+    # [04/25] Libero Run
+    SIGLIP_224PX_MX_LIBERO_SPATIAL = Exp_SigLIP_224px_LIBERO_Spatial
 
     @property
     def vla_id(self) -> str:
