@@ -80,6 +80,14 @@ will handle keeping things in sync (including any changes to `vlm-core`).
 
 ## Installation
 
+First, clone this repo and create a Conda environment:
+
+```bash
+git clone https://github.com/siddk/prismatic-dev
+conda create -n prisma python=3.10 -y
+conda activate prisma
+```
+
 This repository was built using Python 3.10, but should be backwards compatible with any Python >= 3.8. We require
 PyTorch 2.1 or greater installation instructions [can be found here](https://pytorch.org/get-started/locally/). This
 repository was developed and has been thoroughly tested with:
@@ -265,6 +273,8 @@ following [Karl's custom script](https://github.com/kpertsch/rlds_dataset_mod/bl
   [official website](https://rail.eecs.berkeley.edu/datasets/bridge_release/data/tfds/bridge_dataset/) and place it
   under the subdirectory `bridge_orig/`. Replace any reference to `bridge` in the OXE code with `bridge_orig`.
 
+If you want to train VLAs in [LIBERO simuation](https://github.com/Lifelong-Robot-Learning/LIBERO), you must also download the LIBERO demonstration dataset(s) preprocessed into RLDS format. The LIBERO-Object subset (10 tasks, 50 demos each) is available [here](https://drive.google.com/drive/folders/11pTkoB8CCkrj-iuAKx3O02fsI2CqmiGR?usp=drive_link). Ask Moo Jin if you want the other subsets in RLDS format.
+
 #### VLA Configuration & Training Script
 
 The entry point for VLA training is [`vla-scripts/train.py`](vla-scripts/train.py). We employ
@@ -332,6 +342,31 @@ source /iris/u/moojink/.openvla_widowx_profile
 python experiments/robot/bridge/eval_model_in_bridge_env.py \
     --model.type <VLM_TYPE> \
     --pretrained_checkpoint <CHECKPOINT_PATH>
+```
+
+### LIBERO
+
+First, set up the `prisma` conda environment following the instructions in [Installation](#installation). Next, install the LIBERO package:
+
+```bash
+pip install -r experiments/robot/libero/requirements.txt  # from prismatic-dev root dir
+git clone https://github.com/Lifelong-Robot-Learning/LIBERO.git
+cd LIBERO
+pip install -e .
+```
+
+Now you can evaluate a VLA model checkpoint in a LIBERO sim environment:
+```bash
+python experiments/robot/libero/eval_model_in_libero_env.py \
+  --model.type <VLM_TYPE> \
+  --pretrained_checkpoint <CHECKPOINT_PATH>
+```
+
+Sample command:
+```bash
+python experiments/sim/eval_vla_on_libero_env.py \
+  --model.type siglip-224px+7b \
+  --pretrained_checkpoint /sphinx/u/moojink/prismatic-dev/runs/siglip-224px+mx-libero_object+n1+b32+x7--LR=2e-5/checkpoints/step-020000-epoch-68-loss=0.0635.pt
 ```
 
 ---
