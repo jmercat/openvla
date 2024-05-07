@@ -47,7 +47,8 @@ RUN pip install \
     rich \
     sentencepiece \
     timm>=0.9.10 \
-    transformers>=4.38.1 \
+    tokenizers==0.19.1 \
+    transformers==4.40.1 \
     wandb \
     tensorflow==2.15.0 \
     tensorflow_datasets==4.9.3 \

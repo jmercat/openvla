@@ -56,10 +56,10 @@ class LaunchConfig:
     # Resume Run Parameters
     pretrained_checkpoint: Optional[str] = (
         "/opt/ml/input/data/training/x-openvla/runs/prism-dinosiglip-224px+mx-oxe-magic-soup-plus+n8+b32+x7/"
-        "checkpoints/step-097500-epoch-13-loss=0.6934.pt"
+        "checkpoints/step-187500-epoch-25-loss=0.6089.pt"
     )
-    resume_step: Optional[int] = 97500
-    resume_epoch: Optional[int] = 13
+    resume_step: Optional[int] = 187500
+    resume_epoch: Optional[int] = 25
 
     # Sagemaker Job Parameters
     entry_point: str = "vla-scripts/train.py"                           # Entry Point for Training
