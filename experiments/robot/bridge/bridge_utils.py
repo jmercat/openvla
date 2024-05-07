@@ -3,20 +3,14 @@
 import os
 import sys
 import time
-from functools import partial
-from pathlib import Path
 
 import imageio
 import numpy as np
 import torch
-from accelerate.utils import set_seed
 from PIL import Image
 from widowx_envs.widowx_env_service import WidowXClient, WidowXConfigs
 
-from prismatic.models import load_vla
-from prismatic.models.materialize import VISION_BACKBONES
-
-sys.path.append("../..")  # hack so that the interpreter can find experiments.robot
+sys.path.append(".")  # hack so that the interpreter can find experiments.robot
 from experiments.robot.bridge.widowx_env import WidowXGym
 
 # Initialize important constants and pretty-printing mode in NumPy.
@@ -62,65 +56,6 @@ def get_widowx_env(cfg, model=None):
         env = HistoryWrapper(env, horizon=1)
         env = TemporalEnsembleWrapper(env, pred_horizon=1)
     return env
-
-
-def get_vla_image_resize_size(vision_backbone_id: str) -> int:
-    """Gets VLA image resize size from vision backbone ID."""
-    return VISION_BACKBONES[vision_backbone_id]["kwargs"]["default_image_size"]
-
-
-def get_image_resize_size(cfg):
-    """
-    Gets image resize size for a model class.
-    If `resize_size` is an int, then the resized image will be a square.
-    Else, the image will be a rectangle.
-    """
-    if cfg.model_family == "llava":
-        resize_size = get_vla_image_resize_size(cfg.model.vision_backbone_id)
-    elif cfg.model_family == "octo":
-        resize_size = 256
-    elif cfg.model_family == "rt_1_x":
-        resize_size = (640, 480)  # PIL expects (W, H)
-    else:
-        raise ValueError("Unexpected `model_family` found in config.")
-    return resize_size
-
-
-def get_vla(cfg):
-    """Loads and returns a VLA model from checkpoint."""
-    # Prepare for model loading.
-    print(f"[*] Initializing Generation Playground with `{cfg.model_family}`")
-    hf_token = cfg.hf_token.read_text().strip() if isinstance(cfg.hf_token, Path) else os.environ[cfg.hf_token]
-    set_seed(cfg.seed)
-    # Load VLA checkpoint.
-    print(f"Loading VLM from checkpoint: {cfg.pretrained_checkpoint}")
-    vla = load_vla(cfg.pretrained_checkpoint, hf_token=hf_token, load_for_training=False)
-    for param in vla.parameters():
-        assert param.dtype == torch.float32, f"Loaded VLM parameter not in full precision: {param}"
-    # Cast to half precision.
-    vla.vision_backbone.to(dtype=vla.vision_backbone.half_precision_dtype)
-    vla.llm_backbone.to(dtype=vla.llm_backbone.half_precision_dtype)
-    vla.to(dtype=vla.llm_backbone.half_precision_dtype)
-    vla.to(DEVICE)
-    return vla
-
-
-def get_model(cfg):
-    """Load model for evaluation."""
-    if cfg.model_family == "llava":
-        model = get_vla(cfg)
-    elif cfg.model_family == "octo":
-        from octo.model.octo_model import OctoModel
-
-        model = OctoModel.load_pretrained("hf://rail-berkeley/octo-base")
-    elif cfg.model_family == "rt_1_x":
-        from experiments.baselines.rt_1_x.rt_1_x_policy import RT1XPolicy
-
-        model = RT1XPolicy(saved_model_path=cfg.pretrained_checkpoint)
-    else:
-        raise ValueError("Unexpected `model_family` found in config.")
-    print(f"Loaded model: {type(model)}")
-    return model
 
 
 def get_next_task_label(task_label):
@@ -184,88 +119,6 @@ def get_preprocessed_image(obs, resize_size):
     else:  # no history
         obs["full_image"] = resize_image(obs["full_image"], resize_size)
     return obs["full_image"]
-
-
-def get_octo_policy_function(model):
-    """Returns a JAX JIT-compiled Octo policy function."""
-    import jax
-
-    # create policy function
-    @jax.jit
-    def sample_actions(
-        pretrained_model,
-        observations,
-        tasks,
-        rng,
-    ):
-        # add batch dim to observations
-        observations = jax.tree_map(lambda x: x[None], observations)
-        actions = pretrained_model.sample_actions(
-            observations,
-            tasks,
-            rng=rng,
-        )
-        # remove batch dim
-        return actions[0]
-
-    def supply_rng(f, rng):
-        def wrapped(*args, **kwargs):
-            nonlocal rng
-            rng, key = jax.random.split(rng)
-            return f(*args, rng=key, **kwargs)
-
-        return wrapped
-
-    policy_fn = supply_rng(
-        partial(
-            sample_actions,
-            model,
-        ),
-        rng=jax.random.PRNGKey(0),
-    )
-
-    return policy_fn
-
-
-def get_vla_action(vla, obs, task_label):
-    """Generates an action with the VLA policy."""
-    image = Image.fromarray(obs["full_image"])
-    image = image.convert("RGB")
-    assert image.size[0] == image.size[1]
-    action = vla.predict_action(image, task_label, unnorm_key="bridge_orig", do_sample=False)
-    return action
-
-
-def get_octo_action(model, obs, task_label, policy_function):
-    """Generates an action with the Octo policy."""
-    task = model.create_tasks(texts=[task_label])
-    obs = {
-        "image_primary": obs["full_image"],
-        # "proprio": obs["proprio"], <-- Octo paper says proprio makes performance worse
-        "pad_mask": obs["pad_mask"],
-    }
-    action = np.array(policy_function(obs, task), dtype=np.float64)
-    return action
-
-
-def get_rt_1_x_action(model, obs, task_label):
-    """Generates an action with the RT-1-X policy."""
-    action = model.predict_action(obs, task_label)
-    return action
-
-
-def get_action(cfg, model, obs, task_label, policy_function=None):
-    """Queries the model to get an action."""
-    if cfg.model_family == "llava":
-        action = get_vla_action(model, obs, task_label)
-        assert action.shape == (ACTION_DIM,)
-    elif cfg.model_family == "octo":
-        action = get_octo_action(model, obs, task_label, policy_function)
-    elif cfg.model_family == "rt_1_x":
-        action = get_rt_1_x_action(model, obs, task_label)
-    else:
-        raise ValueError("Unexpected `model_family` found in config.")
-    return action
 
 
 def refresh_obs(obs, env):

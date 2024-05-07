@@ -30,17 +30,19 @@ import numpy as np
 from prismatic.conf import ModelConfig, ModelRegistry
 
 # TODO (@moojink) Hack so that the interpreter can find experiments.robot
-sys.path.append("../..")
-from experiments.robot.bridge.utils import (
-    get_action,
-    get_image_resize_size,
-    get_model,
+sys.path.append(".")
+from experiments.robot.bridge.bridge_utils import (
     get_next_task_label,
-    get_octo_policy_function,
     get_preprocessed_image,
     get_widowx_env,
     refresh_obs,
     save_rollout_gif,
+)
+from experiments.robot.utils import (
+    get_action,
+    get_image_resize_size,
+    get_model,
+    get_octo_policy_function,
 )
 
 
@@ -59,6 +61,9 @@ class GenerateConfig:
         "/scr/moojink/checkpoints/tri/reproduction-llava-v15+mx-bridge+n1+b32+x7/checkpoints/"
         "step-077500-epoch-00-loss=0.0488.pt"
     )
+
+    unnorm_key: str = "bridge_orig"                             # Dataset name for action unnormalization
+    center_crop: bool = False                                   # Center crop? (if trained w/ random crop image aug)
 
     # Environment-Specific Parameters
     host_ip: str = "localhost"
@@ -94,6 +99,8 @@ class GenerateConfig:
 @draccus.wrap()
 def eval_model_in_bridge_env(cfg: GenerateConfig) -> None:
     assert cfg.pretrained_checkpoint is not None, "cfg.pretrained_checkpoint must not be None!"
+    assert cfg.unnorm_key == "bridge_orig", "`unnorm_key` must equal name of dataset (bridge_orig)!"
+    assert not cfg.center_crop, "`center_crop` should be disabled for Bridge evaluations!"
 
     # Load Model --> Get Expected Image Dimensions
     model = get_model(cfg)
