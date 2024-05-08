@@ -15,7 +15,7 @@ utilities around different types of decoding/generation strategies.
 import warnings
 from abc import ABC, abstractmethod
 from functools import partial
-from typing import Callable, List, Optional, Type
+from typing import Callable, List, Optional, Sequence, Type
 
 import torch
 import torch.nn as nn
@@ -83,6 +83,10 @@ class LLMBackbone(nn.Module, ABC):
     @property
     @abstractmethod
     def half_precision_dtype(self) -> torch.dtype: ...
+
+    @property
+    @abstractmethod
+    def last_layer_modules(self) -> Sequence[nn.Module]: ...
 
     @property
     def embed_dim(self) -> int:
