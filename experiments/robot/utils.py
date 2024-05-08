@@ -1,6 +1,7 @@
 import json
 import os
 import time
+from collections import deque
 from functools import partial
 from pathlib import Path
 
@@ -16,6 +17,12 @@ try:
     # Only needed for Diffusion Policy
     import robomimic.utils.file_utils as FileUtils
     from droid.evaluation.policy_wrapper import PolicyWrapperRobomimic
+except ImportError:
+    pass
+
+try:
+    # Only used for Octo
+    import gym
 except ImportError:
     pass
 
@@ -80,7 +87,10 @@ def normalize_gripper_action(action):
     """
     # To implement, just normalize the last action to [-1,+1].
     orig_low, orig_high = 0.0, 1.0
-    action[-1] = 2 * (action[-1] - orig_low) / (orig_high - orig_low) - 1
+    if len(action.shape) > 1:
+        action[..., -1] = 2 * (action[..., -1] - orig_low) / (orig_high - orig_low) - 1
+    else:
+        action[-1] = 2 * (action[-1] - orig_low) / (orig_high - orig_low) - 1
     return action
 
 
@@ -123,6 +133,46 @@ def get_octo_policy_function(model):
     )
 
     return policy_fn
+
+
+class TemporalEnsembleWrapper(gym.Wrapper):
+    """
+    Performs temporal ensembling from https://arxiv.org/abs/2304.13705
+    At every timestep we execute an exponential weighted average of the last
+    `pred_horizon` predictions for that timestep.
+    Note: this is a nearly exact copy of the TemporalEnsembleWrapper from Octo, but removes
+      the action_space attribute since Libero envs do not expose this.
+    """
+
+    def __init__(self, env: gym.Env, pred_horizon: int, exp_weight: int = 0):
+        super().__init__(env)
+        self.pred_horizon = pred_horizon
+        self.exp_weight = exp_weight
+
+        self.act_history = deque(maxlen=self.pred_horizon)
+
+    def step(self, actions):
+        assert len(actions) >= self.pred_horizon
+
+        self.act_history.append(actions[: self.pred_horizon])
+        num_actions = len(self.act_history)
+
+        # select the predicted action for the current step from the history of action chunk predictions
+        curr_act_preds = np.stack(
+            [pred_actions[i] for (i, pred_actions) in zip(range(num_actions - 1, -1, -1), self.act_history)]
+        )
+
+        # more recent predictions get exponentially *less* weight than older predictions
+        weights = np.exp(-self.exp_weight * np.arange(num_actions))
+        weights = weights / weights.sum()
+        # compute the weighted average across all predictions for this timestep
+        action = np.sum(weights[:, None] * curr_act_preds, axis=0)
+
+        return self.env.step(action)
+
+    def reset(self, **kwargs):
+        self.act_history = deque(maxlen=self.pred_horizon)
+        return self.env.reset(**kwargs)
 
 
 ###################################################################################################
@@ -294,10 +344,30 @@ def get_octo_action(model, obs, task_label, policy_function):
     obs = {
         "image_primary": obs["full_image"],
         # "proprio": obs["proprio"], <-- Octo paper says proprio makes performance worse
+        # "timestep_pad_mask": obs["timestep_pad_mask"],
         "pad_mask": obs["pad_mask"],
     }
     action = np.array(policy_function(obs, task), dtype=np.float64)
     return action
+
+
+def get_octo_action_nowrap(model, obs, task_label, policy_function):
+    """Generates an action with the Octo policy."""
+    task = model.create_tasks(texts=[task_label])
+    obs = {
+        "image_primary": obs["full_image"][None],
+        "timestep_pad_mask": np.ones((1,)),
+        # "pad_mask": np.ones((1,)),
+    }
+    action = np.array(policy_function(obs, task), dtype=np.float64)
+
+    metadata = model.dataset_statistics["action"]
+    mask = metadata.get("mask", np.ones_like(metadata["mean"], dtype=bool))
+    return np.where(
+        mask,
+        (action * metadata["std"]) + metadata["mean"],
+        action,
+    )
 
 
 def get_rt_1_x_action(model, obs, task_label):
@@ -306,7 +376,7 @@ def get_rt_1_x_action(model, obs, task_label):
     return action
 
 
-def get_action(cfg, model, obs, task_label, policy_function=None):
+def get_action(cfg, model, obs, task_label, policy_function=None, octo_nowrap=False):
     """Queries the model to get an action."""
     if cfg.model_family == "llava":
         action = get_vla_action(model, obs, task_label, cfg.unnorm_key, center_crop=cfg.center_crop)
@@ -314,7 +384,10 @@ def get_action(cfg, model, obs, task_label, policy_function=None):
     elif cfg.model_family == "diffusion_policy":
         action = get_dp_action(model, obs, task_label)
     elif cfg.model_family == "octo":
-        action = get_octo_action(model, obs, task_label, policy_function)
+        if octo_nowrap:
+            action = get_octo_action_nowrap(model, obs, task_label, policy_function)
+        else:
+            action = get_octo_action(model, obs, task_label, policy_function)
     elif cfg.model_family == "rt_1_x":
         action = get_rt_1_x_action(model, obs, task_label)
     else:
