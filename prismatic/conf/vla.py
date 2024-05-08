@@ -192,6 +192,17 @@ class Exp_SigLIP_224px_DROID(Exp_LLaVa15_Bridge):
     data_mix: str = "droid"
 
 
+# === [8 GPU] Fast Iteration =>> DINO-SigLIP 224px + Bridge ===
+@dataclass
+class Exp_DinoSigLIP_224px_Bridge(Exp_LLaVa15_Bridge):
+    vla_id: str = "prism-dinosiglip-224px+mx-bridge"
+    base_vlm: Union[str, Path] = "prism-dinosiglip-224px+7b"
+    freeze_vision_backbone: bool = False
+
+    data_mix: str = "bridge"
+    learning_rate: float = 2e-5
+
+
 # === [64 GPU] DINO-SigLIP 224px + OXE Magic Soup++ ===
 @dataclass
 class Exp_DinoSigLIP_224px_OXE_Magic_Soup_Plus(Exp_LLaVa15_Bridge):
@@ -245,6 +256,9 @@ class VLARegistry(Enum):
 
     # [03/28] DROID Experiments
     SIGLIP_224PX_MX_DROID = Exp_SigLIP_224px_DROID
+
+    # [05/07] DinoSiglip + Bridge
+    DINOSIGLIP_224PX_MX_BRIDGE = Exp_DinoSigLIP_224px_Bridge
 
     # [04/18] OXE Magic Soup Plus Run
     DINOSIGLIP_224PX_MX_OXE_MAGIC_SOUP_PLUS = Exp_DinoSigLIP_224px_OXE_Magic_Soup_Plus
