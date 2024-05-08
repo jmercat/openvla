@@ -8,7 +8,10 @@ import cv2
 import imageio
 import numpy as np
 import torch
+from droid.robot_env import RobotEnv
 from PIL import Image
+
+from experiments.robot.utils import TemporalEnsembleWrapper
 
 # TODO (@moojink) Hack so that the interpreter can find local packages
 sys.path.append(".")
@@ -36,6 +39,15 @@ def get_next_task_label(task_label):
             task_label = user_input
     print(f"Task: {task_label}")
     return task_label
+
+
+def get_tdroid_env(cfg):
+    """Get T-DROID control environment."""
+    env = RobotEnv(action_space=cfg.action_space)
+    # (For Octo only) Wrap the robot environment.
+    if cfg.model_family == "octo":
+        env = TemporalEnsembleWrapper(env, pred_horizon=4)
+    return env
 
 
 def save_rollout_video(rollout_images, idx):

@@ -44,6 +44,13 @@ Usage:
                 diffusion_policy/04-29-None/bz_128_noise_samples_8_sample_weights_1_dataset_names
                 _mjk_panda_4_abs_cams_static_ldkeys_proprio-lang_visenc_VisualCore_fuser_None/
                 20240429213208/models/model_epoch_2900.pth
+
+    Octo:
+
+        python experiments/robot/tdroid/eval_model_in_tdroid_env.py \
+            --model_family octo \
+            --action_space cartesian_velocity \
+            --pretrained_checkpoint /scr/moojink/checkpoints/kpertsch/octo_tdroid_task1_20240501_202241
 """
 
 import sys
@@ -54,7 +61,6 @@ from pathlib import Path
 from typing import Union
 
 import draccus
-from droid.robot_env import RobotEnv
 
 from prismatic.conf import ModelConfig, ModelRegistry
 
@@ -63,6 +69,7 @@ sys.path.append(".")
 from experiments.robot.tdroid.tdroid_utils import (
     get_next_task_label,
     get_preprocessed_image,
+    get_tdroid_env,
     save_rollout_video,
 )
 from experiments.robot.utils import (
@@ -137,7 +144,7 @@ def main(cfg: GenerateConfig) -> None:
         policy_fn = get_octo_policy_function(model)
 
     # Initialize the Panda environment.
-    env = RobotEnv(action_space=cfg.action_space)
+    env = get_tdroid_env(cfg)
 
     # Start evaluation.
     task_label = ""
@@ -190,7 +197,7 @@ def main(cfg: GenerateConfig) -> None:
                     obs["image"][cfg.camera_serial_num] = obs["full_image"]
 
                     # Query model to get action.
-                    action = get_action(cfg, model, obs, task_label, policy_fn)
+                    action = get_action(cfg, model, obs, task_label, policy_fn, octo_nowrap=True)
 
                     # Normalize gripper action [0,1] -> [-1,+1] because the env expects the latter.
                     action = normalize_gripper_action(action)
