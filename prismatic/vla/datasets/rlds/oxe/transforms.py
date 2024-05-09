@@ -824,6 +824,19 @@ def libero_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
     return trajectory
 
 
+def tdroid_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
+    trajectory["action"] = tf.concat(
+        [
+            trajectory["action"][:, :6],
+            binarize_gripper_actions(trajectory["action"][:, -1])[:, None],
+        ],
+        axis=1,
+    )
+    trajectory["observation"]["EEF_state"] = trajectory["observation"]["cartesian_position"][:, :6]
+    trajectory["observation"]["gripper_state"] = trajectory["observation"]["gripper_position"][:, -1:]
+    return trajectory
+
+
 # === Registry ===
 OXE_STANDARDIZATION_TRANSFORMS = {
     "bridge_oxe": bridge_oxe_dataset_transform,
@@ -888,7 +901,11 @@ OXE_STANDARDIZATION_TRANSFORMS = {
     "dobbe": dobbe_dataset_transform,
     "roboset": roboset_dataset_transform,
     "rh20t": rh20t_dataset_transform,
+    ### Libero datasets
     "libero": libero_dataset_transform,
     "libero_object": libero_dataset_transform,
     "libero_spatial": libero_dataset_transform,
+    ### T-DROID datasets
+    "tdroid_carrot_in_bowl": tdroid_dataset_transform,
+    "tdroid_pour_corn_in_pot": tdroid_dataset_transform,
 }

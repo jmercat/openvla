@@ -231,6 +231,27 @@ class Exp_SigLIP_224px_LIBERO_Spatial(Exp_LLaVa15_Bridge):
     learning_rate: float = 2e-5
 
 
+# === [8 GPU] SigLIP 224px + T-DROID ===
+@dataclass
+class Exp_SigLIP_224px_Tdroid_CarrotInBowl(Exp_LLaVa15_Bridge):
+    vla_id: str = "siglip-224px+mx-tdroid_carrot_in_bowl"
+    base_vlm: Union[str, Path] = "siglip-224px+7b"
+    freeze_vision_backbone: bool = False
+
+    data_mix: str = "tdroid_carrot_in_bowl"
+    learning_rate: float = 2e-5
+
+
+@dataclass
+class Exp_SigLIP_224px_Tdroid_PourCornInPot(Exp_LLaVa15_Bridge):
+    vla_id: str = "siglip-224px+mx-tdroid_pour_corn_in_pot"
+    base_vlm: Union[str, Path] = "siglip-224px+7b"
+    freeze_vision_backbone: bool = False
+
+    data_mix: str = "tdroid_pour_corn_in_pot"
+    learning_rate: float = 2e-5
+
+
 # === Define a VLA Registry Enum for Reference & Validation ===
 @unique
 class VLARegistry(Enum):
@@ -265,6 +286,10 @@ class VLARegistry(Enum):
 
     # [04/25] Libero Run
     SIGLIP_224PX_MX_LIBERO_SPATIAL = Exp_SigLIP_224px_LIBERO_Spatial
+
+    # [05/08] T-DROID Runs
+    SIGLIP_224PX_MX_TDROID_CARROT_IN_BOWL = Exp_SigLIP_224px_Tdroid_CarrotInBowl
+    SIGLIP_224PX_MX_TDROID_POUR_CORN_IN_POT = Exp_SigLIP_224px_Tdroid_PourCornInPot
 
     @property
     def vla_id(self) -> str:

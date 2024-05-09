@@ -613,6 +613,7 @@ OXE_DATASET_CONFIGS = {
         "state_encoding": StateEncoding.POS_EULER,
         "action_encoding": ActionEncoding.EEF_POS,
     },
+    ### Libero Datasets
     "libero": {
         "image_obs_keys": {"primary": "image", "secondary": None, "wrist": "wrist_image"},
         "depth_obs_keys": {"primary": None, "secondary": None, "wrist": None},
@@ -630,6 +631,21 @@ OXE_DATASET_CONFIGS = {
     "libero_spatial": {
         "image_obs_keys": {"primary": "image", "secondary": None, "wrist": "wrist_image"},
         "depth_obs_keys": {"primary": None, "secondary": None, "wrist": None},
+        "state_obs_keys": ["EEF_state", None, "gripper_state"],
+        "state_encoding": StateEncoding.POS_EULER,
+        "action_encoding": ActionEncoding.EEF_POS,
+    },
+    ### T-DROID datasets
+    "tdroid_carrot_in_bowl": {
+        "image_obs_keys": {"primary": "static_image", "secondary": None, "wrist": None},
+        "depth_obs_keys": {"primary": "static_depth_image", "secondary": None, "wrist": None},
+        "state_obs_keys": ["EEF_state", None, "gripper_state"],
+        "state_encoding": StateEncoding.POS_EULER,
+        "action_encoding": ActionEncoding.EEF_POS,
+    },
+    "tdroid_pour_corn_in_pot": {
+        "image_obs_keys": {"primary": "static_image", "secondary": None, "wrist": None},
+        "depth_obs_keys": {"primary": "static_depth_image", "secondary": None, "wrist": None},
         "state_obs_keys": ["EEF_state", None, "gripper_state"],
         "state_encoding": StateEncoding.POS_EULER,
         "action_encoding": ActionEncoding.EEF_POS,
