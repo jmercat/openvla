@@ -185,8 +185,60 @@ class PrismaticVLM(VLM):
             overwatch.info(f"[TRAINABLE] 🔥 =>> LLM Backbone `{self.llm_backbone.identifier}`", ctx_level=1)
             overwatch.info(f"[TRAINABLE] 🔥 =>> Projector `{self.arch_specifier}`", ctx_level=1)
 
+        elif stage in {"last-layer-finetune", "vla-last-layer-train"}:
+            self.vision_backbone.requires_grad_(False)
+            self.projector.requires_grad_(False)
+            self.llm_backbone.requires_grad_(False)
+
+            # Unfreeze final LLM layer
+            for module in self.llm_backbone.last_layer_finetune_modules:
+                module.requires_grad_(True)
+
+            # Add to `self.trainable_module_keys`
+            self.trainable_module_keys = ["llm_backbone"]
+
+            # Update Trackers
+            self.vision_backbone_requires_grad = False
+
+            # Explicitly Log Frozen / Unfrozen Components
+            # fmt: off
+            overwatch.info(f"[Frozen]                    🥶   =>> Vision Backbone `{self.vision_backbone.identifier}`", ctx_level=1)  # noqa: E501
+            overwatch.info(f"[Frozen, except last layer] 🥶🔥 =>> LLM Backbone `{self.llm_backbone.identifier}`", ctx_level=1)  # noqa: E501
+            overwatch.info(f"[Frozen]                    🥶   =>> Projector `{self.arch_specifier}`", ctx_level=1)
+            # fmt: on
+
+        elif stage in {"vla-sandwich-train"}:
+            self.vision_backbone.dtype = torch.float32
+            self.vision_backbone.requires_grad_(True)
+            self.projector.requires_grad_(True)
+            self.llm_backbone.requires_grad_(False)
+
+            # Unfreeze final LLM layer
+            for module in self.llm_backbone.last_layer_finetune_modules:
+                module.requires_grad_(True)
+
+            # Add to `self.trainable_module_keys`
+            self.trainable_module_keys = ["vision_backbone", "projector", "llm_backbone"]
+
+            # Update Trackers
+            self.vision_backbone_requires_grad = True
+
+            # Explicitly Log Frozen / Unfrozen Components
+            # fmt: off
+            overwatch.info(f"[TRAINABLE]                 🔥   =>> Vision Backbone `{self.vision_backbone.identifier}`", ctx_level=1)  # noqa: E501
+            overwatch.info(f"[Frozen, except last layer] 🥶🔥 =>> LLM Backbone `{self.llm_backbone.identifier}`", ctx_level=1)  # noqa: E501
+            overwatch.info(f"[TRAINABLE]                 🔥   =>> Projector `{self.arch_specifier}`", ctx_level=1)
+            # fmt: on
+
         else:
             raise ValueError(f"Stage `{stage}` is not supported for LLaVa! Try < align | finetune >")
+
+        overwatch.debug("##################################################")
+        overwatch.debug("#####      Trainable Network Parameters:     #####")
+        overwatch.debug("##################################################")
+        for name, param in self.named_parameters():
+            if param.requires_grad:
+                overwatch.debug(name)
 
     def load_from_checkpoint(self, stage: str, run_dir: Path, pretrained_checkpoint: Optional[Path] = None) -> None:
         """Load weights from checkpoint (if required by the given stage)."""

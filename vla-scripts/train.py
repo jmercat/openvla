@@ -16,8 +16,8 @@ Run with:
 """
 
 import json
-import re
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Tuple, Union
@@ -64,7 +64,6 @@ class TrainConfig:
     resume_epoch: Optional[int] = None                              # Epoch to Resume (should match checkpoint)
 
     # Run Arguments
-    stage: str = "vla-train"                                        # Train Stage (only `vla-train` supported for now)
     run_id: Optional[str] = None                                    # Run ID for logging, Weights & Biases
     run_id_note: Optional[str] = None                               # Extra note for logging, Weights & Biases
     save_interval: int = 2500                                       # Interval for saving checkpoints (in steps)
@@ -94,10 +93,6 @@ class TrainConfig:
         self.warmup_ratio = self.vla.warmup_ratio
 
         self.train_strategy = self.vla.train_strategy
-
-        # Handle `freeze_vision_backbone`
-        if not self.vla.freeze_vision_backbone:
-            self.stage = "vla-full-train"
 
         # [Validate] Assert on `expected_world_size`
         assert (
@@ -155,9 +150,28 @@ def train(cfg: TrainConfig) -> None:
     for param in vlm.parameters():
         assert param.dtype == torch.float32, f"Loaded VLM parameter not in full precision: {param}"
 
+    # Determine training "stage" based on frozen vs unfrozen parameters
+    if not cfg.vla.freeze_vision_backbone and not cfg.vla.freeze_llm_backbone:
+        stage = "vla-full-train"
+    elif cfg.vla.freeze_vision_backbone and not cfg.vla.freeze_llm_backbone:
+        stage = "vla-train"
+    elif not cfg.vla.freeze_vision_backbone and cfg.vla.freeze_llm_backbone:
+        assert cfg.vla.unfreeze_last_llm_layer, "You should unfreeze at least the last layer of your LLM!"
+        stage = "vla-sandwich-train"
+    elif cfg.vla.freeze_vision_backbone and cfg.vla.freeze_llm_backbone:
+        assert cfg.vla.unfreeze_last_llm_layer, "Need to unfreeze at least last LLM layer to train!"
+        stage = "vla-last-layer-train"
+    else:
+        raise ValueError(
+            "Weight freezing configuration not supported. VLA config has the following parameters: "
+            f"freeze_vision_backbone: {cfg.vla.freeze_vision_backbone}"
+            f"freeze_llm_backbone: {cfg.vla.freeze_llm_backbone}"
+            f"unfreeze_last_llm_layer: {cfg.vla.unfreeze_last_llm_layer}"
+        )
+
     # [Explicit] Call to `freeze_backbones` here for clarity =>> will log exactly what is/is not frozen
-    overwatch.info(f"Invoking `VLM.freeze_backbones()` for `{vla_id}` => Stage: `{cfg.stage}`")
-    vlm.freeze_backbones(cfg.stage)
+    overwatch.info(f"Invoking `VLM.freeze_backbones()` for `{vla_id}` => Stage: `{stage}`")
+    vlm.freeze_backbones(stage)
 
     # Get VLA Dataset & Collator
     overwatch.info(f"Creating VLA Open-X Dataset with Mixture `{cfg.vla.data_mix}`")
@@ -181,7 +195,7 @@ def train(cfg: TrainConfig) -> None:
         train_strategy=cfg.train_strategy,
         vlm=vlm,
         device_id=device_id,
-        stage=cfg.stage,
+        stage=stage,
         epochs=cfg.epochs,
         max_steps=cfg.max_steps,
         global_batch_size=cfg.global_batch_size,

@@ -6,7 +6,6 @@ fine-grained control over wrapping policies and mixed precision per component).
 """
 
 import math
-import shutil
 from collections import OrderedDict
 from functools import partial
 from pathlib import Path
@@ -147,7 +146,7 @@ class FSDPStrategy(TrainingStrategy):
             )
 
             # When running FSDP with a frozen vision backbone --> move to half precision!
-            if self.stage not in {"full-finetune", "vla-full-train"}:
+            if self.stage not in {"full-finetune", "vla-full-train", "vla-sandwich-train"}:
                 overwatch.info("Casting Vision Backbone to *Half Precision* via `.to(dtype=...)`")
                 self.vlm.vision_backbone.to(dtype=self.vlm.vision_backbone.half_precision_dtype)
 
