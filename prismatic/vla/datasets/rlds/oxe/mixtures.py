@@ -253,5 +253,13 @@ OXE_NAMED_MIXTURES: Dict[str, List[Tuple[str, float]]] = {
     "libero_spatial": [
         ("libero_spatial", 1.0),                           # LIBERO-Spatial
     ],
+
+    # === T-DROID Dataset ===
+    "tdroid_carrot_in_bowl": [
+        ("tdroid_carrot_in_bowl", 1.0),
+    ],
+    "tdroid_pour_corn_in_pot": [
+        ("tdroid_pour_corn_in_pot", 1.0),
+    ],
 }
 # fmt: on

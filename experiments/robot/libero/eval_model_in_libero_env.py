@@ -18,20 +18,20 @@ from typing import Union
 import draccus
 import numpy as np
 import tqdm
+import wandb
 from libero.libero import benchmark
 
-import wandb
 from prismatic.conf import ModelConfig, ModelRegistry
 
 # TODO (moojink) Hack so that the interpreter can find experiments.robot
 sys.path.append("../..")
 from experiments.robot.libero.libero_utils import (
-    get_action,
     get_libero_dummy_action,
     get_libero_env,
     get_libero_img,
 )
 from experiments.robot.utils import (
+    get_action,
     get_image_resize_size,
     get_model,
     get_octo_policy_function,
@@ -147,7 +147,9 @@ def eval_libero(cfg: GenerateConfig) -> None:
                     rollout_images.append(img)
 
                     # Generate action with model.
-                    action = get_action(cfg, model, {"full_image": img}, task_description, policy_function=policy_fn)
+                    action = get_action(
+                        cfg, model, {"full_image": img}, task_description, policy_function=policy_fn, octo_nowrap=True
+                    )
 
                     if cfg.model_family != "octo":
                         # Normalize gripper action [0,1] -> [-1,+1] because the env expects the latter.
