@@ -98,5 +98,5 @@ class LLaMa2LLMBackbone(HFCausalLLMBackbone):
         return torch.bfloat16
 
     @property
-    def last_layer_modules(self) -> Sequence[nn.Module]:
-        return (self.llm.model.layers[-1], self.llm.lm_head)
+    def last_layer_finetune_modules(self) -> Sequence[nn.Module]:
+        return (self.llm.model.embed_tokens, self.llm.model.layers[-1], self.llm.lm_head)

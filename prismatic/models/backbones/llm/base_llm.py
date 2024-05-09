@@ -86,7 +86,7 @@ class LLMBackbone(nn.Module, ABC):
 
     @property
     @abstractmethod
-    def last_layer_modules(self) -> Sequence[nn.Module]: ...
+    def last_layer_finetune_modules(self) -> Sequence[nn.Module]: ...
 
     @property
     def embed_dim(self) -> int:

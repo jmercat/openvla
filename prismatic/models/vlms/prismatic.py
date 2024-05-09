@@ -191,7 +191,7 @@ class PrismaticVLM(VLM):
             self.llm_backbone.requires_grad_(False)
 
             # Unfreeze final LLM layer
-            for module in self.llm_backbone.last_layer_modules:
+            for module in self.llm_backbone.last_layer_finetune_modules:
                 module.requires_grad_(True)
 
             # Add to `self.trainable_module_keys`
@@ -214,7 +214,7 @@ class PrismaticVLM(VLM):
             self.llm_backbone.requires_grad_(False)
 
             # Unfreeze final LLM layer
-            for module in self.llm_backbone.last_layer_modules:
+            for module in self.llm_backbone.last_layer_finetune_modules:
                 module.requires_grad_(True)
 
             # Add to `self.trainable_module_keys`
