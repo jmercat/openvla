@@ -16,8 +16,8 @@ Run with:
 """
 
 import json
-import re
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Tuple, Union
@@ -64,7 +64,7 @@ class TrainConfig:
     resume_epoch: Optional[int] = None                              # Epoch to Resume (should match checkpoint)
 
     # Run Arguments
-    stage: str = "vla-train"                                        # Train Stage (only `vla-train` supported for now)
+    stage: str = "vla-full-train"                                   # Options: vla_train, vla-full-train, vla-last-layer-train, vla-sandwich-train  # noqa: E501
     run_id: Optional[str] = None                                    # Run ID for logging, Weights & Biases
     run_id_note: Optional[str] = None                               # Extra note for logging, Weights & Biases
     save_interval: int = 2500                                       # Interval for saving checkpoints (in steps)
@@ -97,7 +97,7 @@ class TrainConfig:
 
         # Handle `freeze_vision_backbone`
         if not self.vla.freeze_vision_backbone:
-            self.stage = "vla-full-train"
+            assert self.stage in ("vla-full-train", "vla-sandwich-train")
 
         # [Validate] Assert on `expected_world_size`
         assert (
