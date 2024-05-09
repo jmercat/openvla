@@ -98,6 +98,8 @@ class TrainConfig:
         # Handle `freeze_vision_backbone`
         if not self.vla.freeze_vision_backbone:
             assert self.stage in ("vla-full-train", "vla-sandwich-train")
+        else:
+            assert self.stage in ("vla-train", "vla-last-layer-train", "vla-sandwich-train")
 
         # [Validate] Assert on `expected_world_size`
         assert (
