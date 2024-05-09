@@ -136,10 +136,6 @@ class PrismaticVLM(VLM):
 
         :param stage: Pretraining stage in < "align" | "finetune" | "full-finetune" | "vla-train" | "vla-full-train" >
         """
-        # if overwatch.is_rank_zero():
-        #     import pdb; pdb.set_trace()
-        # import torch.distributed as dist
-        # dist.barrier()
         if stage == "align":
             self.vision_backbone.requires_grad_(False)
             self.llm_backbone.requires_grad_(False)
@@ -237,9 +233,12 @@ class PrismaticVLM(VLM):
         else:
             raise ValueError(f"Stage `{stage}` is not supported for LLaVa! Try < align | finetune >")
 
+        overwatch.debug("##################################################")
+        overwatch.debug("#####      Trainable Network Parameters:     #####")
+        overwatch.debug("##################################################")
         for name, param in self.named_parameters():
             if param.requires_grad:
-                print(name)
+                overwatch.debug(name)
 
     def load_from_checkpoint(self, stage: str, run_dir: Path, pretrained_checkpoint: Optional[Path] = None) -> None:
         """Load weights from checkpoint (if required by the given stage)."""
