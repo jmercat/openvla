@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import time
 from collections import deque
@@ -309,11 +310,14 @@ def get_vla_action(vla, obs, task_label, unnorm_key, center_crop=False):
     image = image.convert("RGB")
 
     # (If trained with image augmentations) Center crop image and then resize back up to original size.
+    # IMPORTANT: Let's say crop scale == 0.9. To get the new height and width (post-crop), we must multiply
+    #            the original height and width by sqrt(0.9) -- not 0.9!
     if center_crop:
         temp_image = np.array(image)  # (H, W, C)
         crop_scale = 0.9
+        sqrt_crop_scale = math.sqrt(crop_scale)
         temp_image_cropped = apply_center_crop(
-            temp_image, t_h=int(crop_scale * temp_image.shape[0]), t_w=int(crop_scale * temp_image.shape[1])
+            temp_image, t_h=int(sqrt_crop_scale * temp_image.shape[0]), t_w=int(sqrt_crop_scale * temp_image.shape[1])
         )
         temp_image = Image.fromarray(temp_image_cropped)
         temp_image = temp_image.resize(image.size, Image.Resampling.LANCZOS)
