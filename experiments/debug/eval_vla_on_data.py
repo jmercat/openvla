@@ -46,14 +46,12 @@ class ModifiedOpenVLA(OpenVLA):
     def __init__(
         self,
         *args,
-        action_norm_stats,
+        norm_stats,
         action_tokenizer,
         **kwargs,
     ) -> None:
         """Subclass of OpenVLA that overrides `predict_action()`."""
-        super(ModifiedOpenVLA, self).__init__(
-            *args, action_norm_stats=action_norm_stats, action_tokenizer=action_tokenizer, **kwargs
-        )
+        super(ModifiedOpenVLA, self).__init__(*args, norm_stats=norm_stats, action_tokenizer=action_tokenizer, **kwargs)
 
     @torch.inference_mode()
     def predict_action(self, image: Image, instruction: str, **kwargs: str) -> np.ndarray:
@@ -95,18 +93,18 @@ class ModifiedOpenVLA(OpenVLA):
             generated_ids = super(PrismaticVLM, self).generate(
                 input_ids=input_ids,                # Shape: [1, seq]
                 pixel_values=pixel_values,          # Shape: [1, 3, res, res] or Dict[str, Shape[1, 3, res, res]]
-                max_new_tokens=self.action_dim,
+                max_new_tokens=self.get_action_dim(),
                 **kwargs
             )
             # fmt: on
 
         # Extract predicted action tokens and translate into (normalized) continuous actions
-        predicted_action_token_ids = generated_ids[:, -self.action_dim :]
+        predicted_action_token_ids = generated_ids[:, -self.get_action_dim() :]
         normalized_actions = self.action_tokenizer.decode_token_ids_to_actions(predicted_action_token_ids.cpu().numpy())
 
         # Unnormalize actions
-        mask = self.action_norm_stats.get("mask", np.ones_like(self.action_norm_stats["mean"], dtype=bool))
-        action_high, action_low = np.array(self.action_norm_stats["q99"]), np.array(self.action_norm_stats["q01"])
+        mask = self.get_action_stats().get("mask", np.ones_like(self.get_action_stats()["mean"], dtype=bool))
+        action_high, action_low = np.array(self.get_action_stats()["q99"]), np.array(self.get_action_stats()["q01"])
         actions = np.where(
             mask,
             0.5 * (normalized_actions + 1) * (action_high - action_low) + action_low,
@@ -118,7 +116,6 @@ class ModifiedOpenVLA(OpenVLA):
 
 def load_vla(
     model_path,
-    dataset_name,
     hf_token=None,
     cache_dir=None,
     load_for_training=False,
@@ -145,7 +142,7 @@ def load_vla(
 
     # Load dataset statistics for action de-normalization
     with open(dataset_stats_json, "r") as f:
-        action_norm_stats = json.load(f)[dataset_name]["action"]
+        norm_stats = json.load(f)
 
     # = Load Individual Components necessary for Instantiating a VLM =
     #   =>> Print Minimal Config
@@ -185,7 +182,7 @@ def load_vla(
         llm_backbone,
         arch_specifier=model_cfg.arch_specifier,
         freeze_weights=not load_for_training,
-        action_norm_stats=action_norm_stats,
+        norm_stats=norm_stats,
         action_tokenizer=action_tokenizer,
     )
 
@@ -227,9 +224,7 @@ def get_vla(cfg):
     hf_token = cfg.hf_token.read_text().strip() if isinstance(cfg.hf_token, Path) else os.environ[cfg.hf_token]
     # Load VLA checkpoint.
     print(f"Loading VLM from checkpoint: {cfg.pretrained_checkpoint}")
-    dataset_name = "bridge_orig"  # TODO (Moo Jin): CHANGE ME BASED ON VLA CONFIG
-    input(f"WARNING: Using dataset statistics for dataset '{dataset_name}'. Press Enter to proceed...")
-    vla = load_vla(cfg.pretrained_checkpoint, dataset_name=dataset_name, hf_token=hf_token, load_for_training=False)
+    vla = load_vla(cfg.pretrained_checkpoint, hf_token=hf_token, load_for_training=False)
     for param in vla.parameters():
         assert param.dtype == torch.float32, f"Loaded VLM parameter not in full precision: {param}"
     # Cast to half precision.
@@ -450,7 +445,6 @@ def eval_vla_on_data(cfg: GenerateConfig) -> None:
 
     # Get VLA Policy and Tokenizer
     vla = get_vla(cfg)
-    tokenizer = vla.llm_backbone.get_tokenizer()
 
     # Get VLA Dataset and Collator
     print(f"Creating VLA Open-X Dataset with Mixture `{cfg.vla.data_mix}`")
@@ -514,12 +508,12 @@ def eval_vla_on_data(cfg: GenerateConfig) -> None:
         print("-----------------------------------------------------------")
 
         # Generate Actions without Teacher Forcing --> `ModifiedOpenVLA.predict_action()`
-        if batch_size == 1:
-            actions_accuracy, l1_loss = eval_no_teacher_forcing_prompt_builder(
-                batch, vla, action_tokenizer, tokenizer, image_transform
-            )
-            stats_dict["teacher_forcing_prompt_builder"]["l1_loss"] += l1_loss
-            stats_dict["teacher_forcing_prompt_builder"]["actions_accuracy"] += actions_accuracy
+        # if batch_size == 1:
+        #     actions_accuracy, l1_loss = eval_no_teacher_forcing_prompt_builder(
+        #         batch, vla, action_tokenizer, tokenizer, image_transform
+        #     )
+        #     stats_dict["teacher_forcing_prompt_builder"]["l1_loss"] += l1_loss
+        #     stats_dict["teacher_forcing_prompt_builder"]["actions_accuracy"] += actions_accuracy
 
         num_batches += 1
         if num_batches == 100:
