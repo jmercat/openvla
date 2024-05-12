@@ -67,6 +67,7 @@ class TrainConfig:
     run_id: Optional[str] = None                                    # Run ID for logging, Weights & Biases
     run_id_note: Optional[str] = None                               # Extra note for logging, Weights & Biases
     save_interval: int = 2500                                       # Interval for saving checkpoints (in steps)
+    image_aug: bool = False                                         # Whether to enable image augmentations
     seed: int = 7                                                   # Random seed (for reproducibility)
 
     # HF Hub Credentials (for any gated models)
@@ -117,6 +118,8 @@ def train(cfg: TrainConfig) -> None:
     )
     if cfg.run_id_note is not None:
         cfg.run_id += f"--{cfg.run_id_note}"
+    if cfg.image_aug:
+        cfg.run_id += "--image_aug"
 
     # Start =>> Build Directories and Set Randomness
     overwatch.info('"Do or do not; there is no try."', ctx_level=1)
@@ -183,6 +186,7 @@ def train(cfg: TrainConfig) -> None:
         prompt_builder_fn=vlm.llm_backbone.prompt_builder_fn,
         default_image_resolution=vlm.vision_backbone.default_image_resolution,
         shuffle_buffer_size=cfg.vla.shuffle_buffer_size,
+        image_aug=cfg.image_aug,
     )
 
     # Save dataset statistics for de-normalization at inference time

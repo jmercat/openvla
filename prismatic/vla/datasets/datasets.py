@@ -75,6 +75,7 @@ class RLDSDataset(IterableDataset):
         resize_resolution: Tuple[int, int],
         shuffle_buffer_size: int = 256_000,
         train: bool = True,
+        image_aug: bool = False,
     ) -> None:
         """Lightweight wrapper around RLDS TFDS Pipeline for use with PyTorch/OpenVLA Data Loaders."""
         self.data_root_dir, self.data_mix, self.batch_transform = data_root_dir, data_mix, batch_transform
@@ -101,12 +102,17 @@ class RLDSDataset(IterableDataset):
                 window_size=1,                                  # If we wanted to feed / predict more than one step
                 future_action_window_size=0,                    # For action chunking
                 skip_unlabeled=True,                            # Skip trajectories without language labels
+                goal_relabeling_strategy="uniform",             # Goals are currently unused
+            ),
+            frame_transform_kwargs=dict(
+                resize_size=resize_resolution,
+                num_parallel_calls=16,                          # For CPU-intensive ops (decoding, resizing, etc.)
                 # image_augment_kwargs=dict(
                 #     random_resized_crop=dict(scale=[0.8, 1.0], ratio=[0.9, 1.1]),
                 #     random_brightness=[0.2],
                 #     random_contrast=[0.8, 1.2],
                 #     random_saturation=[0.8, 1.2],
-                #     random_hue=[0.1],
+                #     random_hue=[0.05],
                 #     augment_order=[
                 #         "random_resized_crop",
                 #         "random_brightness",
@@ -115,11 +121,6 @@ class RLDSDataset(IterableDataset):
                 #         "random_hue",
                 #     ],
                 # ),
-                goal_relabeling_strategy="uniform",             # Goals are currently unused
-            ),
-            frame_transform_kwargs=dict(
-                resize_size=resize_resolution,
-                num_parallel_calls=16,                          # For CPU-intensive ops (decoding, resizing, etc.)
             ),
             dataset_kwargs_list=per_dataset_kwargs,
             shuffle_buffer_size=shuffle_buffer_size,
@@ -129,6 +130,25 @@ class RLDSDataset(IterableDataset):
             traj_read_threads=len(mixture_spec),
             train=train,
         )
+
+        # If applicable, enable image augmentations
+        if image_aug:
+            rlds_config["frame_transform_kwargs"].update({"image_augment_kwargs" : dict(
+                # random_resized_crop=dict(scale=[0.8, 1.0], ratio=[0.9, 1.1]),
+                # random_resized_crop=dict(scale=[0.8, 1.0], ratio=[1.0, 1.0]),
+                random_resized_crop=dict(scale=[0.9, 0.9], ratio=[1.0, 1.0]),
+                random_brightness=[0.2],
+                random_contrast=[0.8, 1.2],
+                random_saturation=[0.8, 1.2],
+                random_hue=[0.05],
+                augment_order=[
+                    "random_resized_crop",
+                    "random_brightness",
+                    "random_contrast",
+                    "random_saturation",
+                    "random_hue",
+                ],
+            )}),
         # fmt: on
 
         # Initialize RLDS Dataset
