@@ -107,20 +107,6 @@ class RLDSDataset(IterableDataset):
             frame_transform_kwargs=dict(
                 resize_size=resize_resolution,
                 num_parallel_calls=16,                          # For CPU-intensive ops (decoding, resizing, etc.)
-                # image_augment_kwargs=dict(
-                #     random_resized_crop=dict(scale=[0.8, 1.0], ratio=[0.9, 1.1]),
-                #     random_brightness=[0.2],
-                #     random_contrast=[0.8, 1.2],
-                #     random_saturation=[0.8, 1.2],
-                #     random_hue=[0.05],
-                #     augment_order=[
-                #         "random_resized_crop",
-                #         "random_brightness",
-                #         "random_contrast",
-                #         "random_saturation",
-                #         "random_hue",
-                #     ],
-                # ),
             ),
             dataset_kwargs_list=per_dataset_kwargs,
             shuffle_buffer_size=shuffle_buffer_size,
@@ -134,8 +120,6 @@ class RLDSDataset(IterableDataset):
         # If applicable, enable image augmentations
         if image_aug:
             rlds_config["frame_transform_kwargs"].update({"image_augment_kwargs" : dict(
-                # random_resized_crop=dict(scale=[0.8, 1.0], ratio=[0.9, 1.1]),
-                # random_resized_crop=dict(scale=[0.8, 1.0], ratio=[1.0, 1.0]),
                 random_resized_crop=dict(scale=[0.9, 0.9], ratio=[1.0, 1.0]),
                 random_brightness=[0.2],
                 random_contrast=[0.8, 1.2],
