@@ -200,7 +200,14 @@ def get_vla(cfg):
     return vla
 
 
-def get_diffusion_policy(cfg):
+def get_dp_frame_stack(checkpoint_path):
+    ckpt_dict = FileUtils.maybe_dict_from_checkpoint(ckpt_path=checkpoint_path)
+    config = json.loads(ckpt_dict["config"])
+    fs = config["train"]["frame_stack"]
+    return fs
+
+
+def get_diffusion_policy(cfg, wrap_policy_for_droid=False):
     """
     Loads a returns a Diffusion Policy model from checkpoint.
     Also returns camera kwargs for initializing the RobotEnv.
@@ -223,6 +230,9 @@ def get_diffusion_policy(cfg):
     policy, _ = FileUtils.policy_from_checkpoint(ckpt_dict=ckpt_dict, device=DEVICE, verbose=True)
     policy.goal_mode = config["train"]["goal_mode"]
     policy.eval_mode = True
+
+    if not wrap_policy_for_droid:
+        return policy
 
     # Determine the action space from the saved train config.
     action_keys = config["train"]["action_keys"]
@@ -279,12 +289,12 @@ def get_diffusion_policy(cfg):
     return wrapped_policy
 
 
-def get_model(cfg):
+def get_model(cfg, wrap_diffusion_policy_for_droid=False):
     """Load model for evaluation."""
     if cfg.model_family == "llava":
         model = get_vla(cfg)
     elif cfg.model_family == "diffusion_policy":
-        model = get_diffusion_policy(cfg)
+        model = get_diffusion_policy(cfg, wrap_policy_for_droid=wrap_diffusion_policy_for_droid)
     elif cfg.model_family == "octo":
         from octo.model.octo_model import OctoModel
 

@@ -133,7 +133,7 @@ def main(cfg: GenerateConfig) -> None:
         assert not cfg.center_crop, "Expecting `center_crop==False` because DP wrapper already handles center cropping!"
 
     # Load model.
-    model = get_model(cfg)
+    model = get_model(cfg, wrap_diffusion_policy_for_droid=True)
 
     # Get expected image dimensions.
     resize_size = get_image_resize_size(cfg)

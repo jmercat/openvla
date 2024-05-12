@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 wandb
+eval_params
 
 # C extensions
 *.so

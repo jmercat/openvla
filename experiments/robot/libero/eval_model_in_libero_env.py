@@ -18,14 +18,15 @@ from typing import Union
 import draccus
 import numpy as np
 import tqdm
-import wandb
 from libero.libero import benchmark
 
+import wandb
 from prismatic.conf import ModelConfig, ModelRegistry
 
 # TODO (moojink) Hack so that the interpreter can find experiments.robot
 sys.path.append("../..")
 from experiments.robot.libero.libero_utils import (
+    DiffusionPolicyWrapper,
     get_libero_dummy_action,
     get_libero_env,
     get_libero_img,
@@ -60,6 +61,10 @@ class GenerateConfig:
     unnorm_key: str = "libero_spatial"                          # Dataset name for action unnormalization
     center_crop: bool = False                                   # Center crop? (if trained w/ random crop image aug)
 
+    # Diffusion Policy args
+    dp_action_horizon: int = None                              # Action chunk size (None means use value found in config)
+    action_space: str = "cartesian_velocity"
+
     # Task suite (options: libero_spatial, libero_object, libero_goal, libero_90, libero_10, libero_100)
     task_suite_name: str = "libero_spatial"
 
@@ -88,6 +93,8 @@ def eval_libero(cfg: GenerateConfig) -> None:
 
     # Load Model
     model = get_model(cfg)
+    if cfg.model_family == "diffusion_policy":
+        model = DiffusionPolicyWrapper(cfg, model)
 
     # [Octo] Create JAX JIT-compiled policy function.
     policy_fn = None
@@ -129,6 +136,10 @@ def eval_libero(cfg: GenerateConfig) -> None:
             init_state_id = episode_idx
             env.set_init_state(init_states[init_state_id])
 
+            # [Diffusion Policy] Reset the observation history.
+            if cfg.model_family == "diffusion_policy":
+                model.reset()
+
             # Setup.
             t = 0
             rollout_images = []
@@ -147,8 +158,14 @@ def eval_libero(cfg: GenerateConfig) -> None:
                     rollout_images.append(img)
 
                     # Generate action with model.
+                    observation = {
+                        "full_image": img,
+                        "state": np.concatenate(
+                            (obs["robot0_eef_pos"], obs["robot0_eef_quat"], obs["robot0_gripper_qpos"])
+                        ),
+                    }
                     action = get_action(
-                        cfg, model, {"full_image": img}, task_description, policy_function=policy_fn, octo_nowrap=True
+                        cfg, model, observation, task_description, policy_function=policy_fn, octo_nowrap=True
                     )
 
                     if cfg.model_family != "octo":
