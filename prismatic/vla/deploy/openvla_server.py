@@ -3,15 +3,16 @@
 
 """
 On client (for server running on 0.0.0.0:8000):
-    import requests
-    import json_numpy
-    json_numpy.patch()
-    import numpy as np
 
-    action = requests.post(
-        "http://0.0.0.0:8000/act",
-        json={"image": np.zeros((256, 256, 3), dtype=np.uint8), "instruction": "do something"}
-    ).json()
+import requests
+import json_numpy
+json_numpy.patch()
+import numpy as np
+
+action = requests.post(
+    "http://0.0.0.0:8000/act",
+    json={"image": np.zeros((256, 256, 3), dtype=np.uint8), "instruction": "do something"}
+).json()
 
 If your server is not reachable from the open internet, you can forward ports to your client via ssh:
     ssh -L 8000:localhost:8000 ssh karl@128.32.162.191
@@ -22,6 +23,7 @@ import json_numpy
 
 json_numpy.patch()
 
+import json  # noqa: E402
 import logging  # noqa: E402
 import traceback  # noqa: E402
 from dataclasses import dataclass  # noqa: E402
@@ -86,11 +88,19 @@ class OpenVLAServer:
 
     def predict_action(self, payload: Dict[Any, Any]):
         try:
+            if double_encode := "encoded" in payload:
+                # This shim supports server evals at Google, where json_numpy is hard to install
+                # So need to "double-encode" numpy arrays to send them as strings.
+                assert len(payload.keys()) == 1, "Only uses encoded payload."
+                payload = json.loads(payload["encoded"])
             image = payload["image"]
             instruction = payload["instruction"]
             unnorm_key = payload.get("unnorm_key")
             action = self.vla.predict_action(Image.fromarray(image).convert("RGB"), instruction, unnorm_key)
-            return JSONResponse(action)
+            if double_encode:
+                return JSONResponse(json_numpy.dumps(action))
+            else:
+                return JSONResponse(action)
         except:  # noqa: E722        # blanket except to robustify against external errors
             logging.error(traceback.format_exc())
             logging.warning(
