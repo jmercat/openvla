@@ -8,11 +8,11 @@ from PIL import Image
 from experiments.robot.utils import TemporalEnsembleWrapper
 
 
-def get_libero_env(task, model_family, model):
+def get_libero_env(task, model_family, model, resolution=128):
     """Initializes and returns the LIBERO environment along with the task description."""
     task_description = task.language
     task_bddl_file = os.path.join(get_libero_path("bddl_files"), task.problem_folder, task.bddl_file)
-    env_args = {"bddl_file_name": task_bddl_file, "camera_heights": 128, "camera_widths": 128}
+    env_args = {"bddl_file_name": task_bddl_file, "camera_heights": resolution, "camera_widths": resolution}
     env = OffScreenRenderEnv(**env_args)
     # (For Octo only) Wrap the robot environment.
     if model_family == "octo":
