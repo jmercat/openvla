@@ -320,7 +320,7 @@ def get_vla_action(vla, obs, task_label, unnorm_key, center_crop=False):
             temp_image, t_h=int(sqrt_crop_scale * temp_image.shape[0]), t_w=int(sqrt_crop_scale * temp_image.shape[1])
         )
         temp_image = Image.fromarray(temp_image_cropped)
-        temp_image = temp_image.resize(image.size, Image.Resampling.LANCZOS)
+        temp_image = temp_image.resize(image.size, Image.Resampling.BILINEAR)  # IMPORTANT: dlimp uses BILINEAR resize
         image = temp_image
 
     action = vla.predict_action(image, task_label, unnorm_key=unnorm_key, do_sample=False)
