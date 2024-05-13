@@ -19,10 +19,10 @@ from experiments.robot.libero.libero_utils import (
 )
 
 LIBERO_RAW_DATA_PATH = "/home/karl/code/LIBERO/datasets/libero_spatial"
-LIBERO_TARGET_PATH = "/shared/karl/data/libero_raw/libero_spatial"
+LIBERO_TARGET_PATH = "/shared/karl/data/libero_raw/libero_spatial_highres"
 
 LIBERO_TASK_SUITE = "libero_spatial"
-RESOLUTION = 128
+RESOLUTION = 256
 
 WANBD_ENTITY = "stanford-voltron"
 WANDB_PROJECT = "openvla"
