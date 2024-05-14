@@ -18,9 +18,9 @@ from typing import Union
 import draccus
 import numpy as np
 import tqdm
+import wandb
 from libero.libero import benchmark
 
-import wandb
 from prismatic.conf import ModelConfig, ModelRegistry
 
 # TODO (moojink) Hack so that the interpreter can find experiments.robot
@@ -37,6 +37,7 @@ from experiments.robot.utils import (
     get_model,
     get_octo_policy_function,
     normalize_gripper_action,
+    update_dp_task_label,
 )
 
 DATE_TIME = time.strftime("%Y_%m_%d-%H_%M_%S")
@@ -136,9 +137,10 @@ def eval_libero(cfg: GenerateConfig) -> None:
             init_state_id = episode_idx
             env.set_init_state(init_states[init_state_id])
 
-            # [Diffusion Policy] Reset the observation history.
+            # [Diffusion Policy] Reset observation history, action chunk queue, and language input.
             if cfg.model_family == "diffusion_policy":
                 model.reset()
+                update_dp_task_label(task_description)
 
             # Setup.
             t = 0

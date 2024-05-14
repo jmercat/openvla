@@ -136,6 +136,15 @@ def get_octo_policy_function(model):
     return policy_fn
 
 
+def update_dp_task_label(task_label):
+    """Updates Diffusion Policy task label."""
+    # Write task label to file (DP class expects to see this file during inference).
+    if not os.path.exists("eval_params"):
+        os.makedirs("eval_params")
+    with open("eval_params/lang_command.txt", "w") as file:
+        file.write(task_label)
+
+
 class TemporalEnsembleWrapper(gym.Wrapper):
     """
     Performs temporal ensembling from https://arxiv.org/abs/2304.13705
@@ -339,15 +348,6 @@ def get_vla_action(vla, obs, task_label, unnorm_key, center_crop=False):
 
 def get_dp_action(model, obs, task_label):
     """Generates an action with the Diffusion Policy."""
-    # Write task label to file, if file doesn't already exist.
-    # (The Diffusion Policy class expects to see this file during inference.)
-    if not os.path.exists("eval_params"):
-        os.makedirs("eval_params")
-    if not os.path.exists("eval_params/lang_command.txt"):
-        with open("eval_params/lang_command.txt", "w") as file:
-            file.write(task_label)
-
-    # Get action.
     action = model.forward(obs)
     return action
 
