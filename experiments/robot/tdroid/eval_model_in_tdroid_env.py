@@ -78,6 +78,7 @@ from experiments.robot.utils import (
     get_model,
     get_octo_policy_function,
     normalize_gripper_action,
+    update_dp_task_label,
 )
 
 
@@ -157,9 +158,10 @@ def main(cfg: GenerateConfig) -> None:
         # Reset environment.
         env.reset(randomize=cfg.randomize_init_robot_state)
 
-        # [Diffusion Policy] Reset the observation history.
+        # [Diffusion Policy] Reset observation history, action chunk queue, and language input.
         if cfg.model_family == "diffusion_policy":
-            model.fs_wrapper.reset()
+            model.reset()
+            update_dp_task_label(task_label)
 
         # Setup.
         t = 0
