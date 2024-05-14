@@ -10,18 +10,18 @@ import h5py
 import numpy as np
 import robosuite.utils.transform_utils as T
 import tqdm
+import wandb
 from libero.libero import benchmark
 
-import wandb
 from experiments.robot.libero.libero_utils import (
     get_libero_dummy_action,
     get_libero_env,
 )
 
-LIBERO_RAW_DATA_PATH = "/home/karl/code/LIBERO/datasets/libero_spatial"
-LIBERO_TARGET_PATH = "/shared/karl/data/libero_raw/libero_spatial_highres"
-
 LIBERO_TASK_SUITE = "libero_spatial"
+LIBERO_RAW_DATA_PATH = f"/iris/u/moojink/LIBERO/libero/datasets/{LIBERO_TASK_SUITE}"
+LIBERO_TARGET_PATH = f"/iris/u/moojink/LIBERO/libero/datasets/regenerated/{LIBERO_TASK_SUITE}"
+
 RESOLUTION = 256
 
 WANBD_ENTITY = "stanford-voltron"
@@ -42,7 +42,8 @@ wandb.init(
     name=f"REGEN-{LIBERO_TASK_SUITE}-{DATE_TIME}",
 )
 
-replay_success = []
+num_replays = 0
+num_success = 0
 for task_id in tqdm.tqdm(range(num_tasks_in_suite)):
     # Get task in suite.
     task = task_suite.get_task(task_id)
@@ -61,6 +62,7 @@ for task_id in tqdm.tqdm(range(num_tasks_in_suite)):
     grp = new_data_file.create_group("data")
 
     # Replay demos in original dataset
+    new_demo_idx = 0
     for i in range(len(orig_data.keys())):
         demo_data = orig_data[f"demo_{i}"]
         actions = demo_data["actions"][()]
@@ -69,7 +71,7 @@ for task_id in tqdm.tqdm(range(num_tasks_in_suite)):
         # Set initial state -- wait for a few steps for environment to settle
         env.reset()
         env.set_init_state(orig_states[0])
-        for _ in range(5):
+        for _ in range(10):
             obs, reward, done, info = env.step(get_libero_dummy_action("llava"))
 
         # Replay actions and record frames
@@ -80,8 +82,17 @@ for task_id in tqdm.tqdm(range(num_tasks_in_suite)):
         robot_states = []
         agentview_images = []
         eye_in_hand_images = []
-        for action in tqdm.tqdm(actions):
-            states.append(env.sim.get_state().flatten())
+        for j, action in enumerate(actions):
+            # Since we're using the original initial state to initialize the envrionment, we copy the initial state
+            # (i.e. state at timestep 0) over from the old HDF5 to the new one.
+            if j == 0:
+                states.append(orig_states[0])
+                robot_states.append(demo_data["robot_states"][0])
+            else:
+                states.append(env.sim.get_state().flatten())
+                robot_states.append(
+                    np.concatenate([obs["robot0_gripper_qpos"], obs["robot0_eef_pos"], obs["robot0_eef_quat"]])
+                )
 
             if "robot0_gripper_qpos" in obs:
                 gripper_states.append(obs["robot0_gripper_qpos"])
@@ -94,41 +105,43 @@ for task_id in tqdm.tqdm(range(num_tasks_in_suite)):
                     )
                 )
             )
-            robot_states.append(
-                np.concatenate([obs["robot0_gripper_qpos"], obs["robot0_eef_pos"], obs["robot0_eef_quat"]])
-            )
             agentview_images.append(obs["agentview_image"])
             eye_in_hand_images.append(obs["robot0_eye_in_hand_image"])
 
             obs, reward, done, info = env.step(action.tolist())
 
+        # Save replayed trajectories to HDF5 (only save successful trajectories)
+        if done:
+            dones = np.zeros(len(actions)).astype(np.uint8)
+            dones[-1] = 1
+            rewards = np.zeros(len(actions)).astype(np.uint8)
+            rewards[-1] = 1
+            assert len(actions) == len(agentview_images)
+
+            ep_data_grp = grp.create_group(f"demo_{new_demo_idx}")
+
+            obs_grp = ep_data_grp.create_group("obs")
+            obs_grp.create_dataset("gripper_states", data=np.stack(gripper_states, axis=0))
+            obs_grp.create_dataset("joint_states", data=np.stack(joint_states, axis=0))
+            obs_grp.create_dataset("ee_states", data=np.stack(ee_states, axis=0))
+            obs_grp.create_dataset("ee_pos", data=np.stack(ee_states, axis=0)[:, :3])
+            obs_grp.create_dataset("ee_ori", data=np.stack(ee_states, axis=0)[:, 3:])
+
+            obs_grp.create_dataset("agentview_rgb", data=np.stack(agentview_images, axis=0))
+            obs_grp.create_dataset("eye_in_hand_rgb", data=np.stack(eye_in_hand_images, axis=0))
+            ep_data_grp.create_dataset("actions", data=actions)
+            ep_data_grp.create_dataset("states", data=np.stack(states))
+            ep_data_grp.create_dataset("robot_states", data=np.stack(robot_states, axis=0))
+            ep_data_grp.create_dataset("rewards", data=rewards)
+            ep_data_grp.create_dataset("dones", data=dones)
+
+            new_demo_idx += 1
+            num_success += 1
+
+        num_replays += 1
+
         # Count number of successful replays
-        replay_success.append(done)
-        print(f"Avg replay success: {np.mean(replay_success)}")
-
-        # Save replayed trajectories to HDF5
-        dones = np.zeros(len(actions)).astype(np.uint8)
-        dones[-1] = 1
-        rewards = np.zeros(len(actions)).astype(np.uint8)
-        rewards[-1] = 1
-        assert len(actions) == len(agentview_images)
-
-        ep_data_grp = grp.create_group(f"demo_{i}")
-
-        obs_grp = ep_data_grp.create_group("obs")
-        obs_grp.create_dataset("gripper_states", data=np.stack(gripper_states, axis=0))
-        obs_grp.create_dataset("joint_states", data=np.stack(joint_states, axis=0))
-        obs_grp.create_dataset("ee_states", data=np.stack(ee_states, axis=0))
-        obs_grp.create_dataset("ee_pos", data=np.stack(ee_states, axis=0)[:, :3])
-        obs_grp.create_dataset("ee_ori", data=np.stack(ee_states, axis=0)[:, 3:])
-
-        obs_grp.create_dataset("agentview_rgb", data=np.stack(agentview_images, axis=0))
-        obs_grp.create_dataset("eye_in_hand_rgb", data=np.stack(eye_in_hand_images, axis=0))
-        ep_data_grp.create_dataset("actions", data=actions)
-        ep_data_grp.create_dataset("states", data=np.stack(states))
-        ep_data_grp.create_dataset("robot_states", data=np.stack(robot_states, axis=0))
-        ep_data_grp.create_dataset("rewards", data=rewards)
-        ep_data_grp.create_dataset("dones", data=dones)
+        print(f"# replays: {num_replays}, # successes: {num_success} ({num_success / num_replays * 100:.1f} %)")
 
         # Log first video from each task
         if i < 5:
