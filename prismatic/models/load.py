@@ -220,6 +220,7 @@ def load_vla(
         freeze_weights=not load_for_training,
         norm_stats=norm_stats,
         action_tokenizer=action_tokenizer,
+        action_chunk_length=vla_cfg.action_chunk_length,
     )
 
     return vla

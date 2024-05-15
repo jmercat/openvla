@@ -34,11 +34,13 @@ class OpenVLA(PrismaticVLM):
         *args,
         norm_stats: Dict[str, Dict[str, Dict[str, Dict[str, List[float]]]]],
         action_tokenizer: ActionTokenizer,
+        action_chunk_length: int,
         **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
         self.norm_stats = norm_stats
         self.action_tokenizer = action_tokenizer
+        self.action_chunk_length = action_chunk_length
 
     @torch.inference_mode()
     def predict_action(
@@ -91,22 +93,23 @@ class OpenVLA(PrismaticVLM):
             generated_ids = super(PrismaticVLM, self).generate(
                 input_ids=input_ids,  # Shape: [1, seq]
                 pixel_values=pixel_values,  # Shape: [1, 3, res, res] or Dict[str, Shape[1, 3, res, res]]
-                max_new_tokens=self.get_action_dim(unnorm_key),
+                max_new_tokens=self.get_action_dim(unnorm_key) * self.action_chunk_length,
                 **kwargs
             )
             # fmt: on
 
         # Extract predicted action tokens and translate into (normalized) continuous actions
-        predicted_action_token_ids = generated_ids[0, -self.get_action_dim(unnorm_key) :]
+        predicted_action_token_ids = generated_ids[0, -(self.get_action_dim(unnorm_key) * self.action_chunk_length) :]
         normalized_actions = self.action_tokenizer.decode_token_ids_to_actions(predicted_action_token_ids.cpu().numpy())
+        normalized_actions = np.reshape(normalized_actions, (self.action_chunk_length, self.get_action_dim(unnorm_key)))
 
         # Unnormalize actions
         action_norm_stats = self.get_action_stats(unnorm_key)
         mask = action_norm_stats.get("mask", np.ones_like(action_norm_stats["q01"], dtype=bool))
         action_high, action_low = np.array(action_norm_stats["q99"]), np.array(action_norm_stats["q01"])
         actions = np.where(
-            mask,
-            0.5 * (normalized_actions + 1) * (action_high - action_low) + action_low,
+            mask[None],
+            0.5 * (normalized_actions + 1) * (action_high[None] - action_low[None]) + action_low[None],
             normalized_actions,
         )
 
