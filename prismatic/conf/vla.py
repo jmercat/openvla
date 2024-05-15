@@ -281,6 +281,16 @@ class Exp_SigLIP_224px_Sandwich_Tdroid_CarrotInBowl(Exp_LLaVa15_Bridge):
     learning_rate: float = 2e-5
 
 
+# === [8 GPU] SigLIP 224px + FrankaWipe ===
+@dataclass
+class Exp_SigLIP_224px_Droid_Wipe(Exp_LLaVa15_Bridge):
+    vla_id: str = "siglip-224px+mx-droid_wipe"
+    base_vlm: Union[str, Path] = "siglip-224px+7b"
+
+    data_mix: str = "droid_wipe"
+    learning_rate: float = 2e-5
+
+
 # === Define a VLA Registry Enum for Reference & Validation ===
 @unique
 class VLARegistry(Enum):
@@ -324,6 +334,9 @@ class VLARegistry(Enum):
     SIGLIP_224PX_ICY_MX_TDROID_CARROT_IN_BOWL = Exp_SigLIP_224px_Icy_Tdroid_CarrotInBowl
     SIGLIP_224PX_LASTLAYER_MX_TDROID_CARROT_IN_BOWL = Exp_SigLIP_224px_LastLayer_Tdroid_CarrotInBowl
     SIGLIP_224PX_SANDWICH_MX_TDROID_CARROT_IN_BOWL = Exp_SigLIP_224px_Sandwich_Tdroid_CarrotInBowl
+
+    # [05/14] DROID Wipe Runs
+    SIGLIP_224PX_MX_DROID_WIPE = Exp_SigLIP_224px_Droid_Wipe
 
     @property
     def vla_id(self) -> str:

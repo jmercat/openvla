@@ -19,7 +19,7 @@ from typing import Any, Dict
 
 import tensorflow as tf
 
-from prismatic.vla.datasets.rlds.oxe.utils.droid_utils import droid_baseact_transform
+from prismatic.vla.datasets.rlds.oxe.utils.droid_utils import droid_baseact_transform, droid_finetuning_transform
 from prismatic.vla.datasets.rlds.utils.data_utils import (
     binarize_gripper_actions,
     invert_gripper_actions,
@@ -908,4 +908,6 @@ OXE_STANDARDIZATION_TRANSFORMS = {
     ### T-DROID datasets
     "tdroid_carrot_in_bowl": tdroid_dataset_transform,
     "tdroid_pour_corn_in_pot": tdroid_dataset_transform,
+    ### DROID Finetuning datasets
+    "droid_wipe": droid_finetuning_transform,
 }

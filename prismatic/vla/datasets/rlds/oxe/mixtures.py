@@ -261,5 +261,11 @@ OXE_NAMED_MIXTURES: Dict[str, List[Tuple[str, float]]] = {
     "tdroid_pour_corn_in_pot": [
         ("tdroid_pour_corn_in_pot", 1.0),
     ],
+
+    # === DROID Finetuning Datasets ===
+    "droid_wipe": [
+        ("droid_wipe", 1.0),
+    ],
+
 }
 # fmt: on

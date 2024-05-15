@@ -124,6 +124,30 @@ def droid_wristact_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
     return trajectory
 
 
+def droid_finetuning_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    DROID dataset transformation for actions expressed in *base* frame of the robot.
+    """
+    dt = trajectory["action_dict"]["cartesian_velocity"][:, :3]
+    dR = trajectory["action_dict"]["cartesian_velocity"][:, 3:6]
+    trajectory["action"] = tf.concat(
+        (
+            dt,
+            dR,
+            1 - trajectory["action_dict"]["gripper_position"],
+        ),
+        axis=-1,
+    )
+    trajectory["observation"]["proprio"] = tf.concat(
+        (
+            trajectory["observation"]["cartesian_position"],
+            trajectory["observation"]["gripper_position"],
+        ),
+        axis=-1,
+    )
+    return trajectory
+
+
 def zero_action_filter(traj: Dict) -> bool:
     """
     Filters transitions who's actions are all-0 (only relative actions, no gripper action).
