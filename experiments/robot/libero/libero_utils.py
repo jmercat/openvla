@@ -16,6 +16,7 @@ def get_libero_env(task, model_family, model, resolution=128):
     task_bddl_file = os.path.join(get_libero_path("bddl_files"), task.problem_folder, task.bddl_file)
     env_args = {"bddl_file_name": task_bddl_file, "camera_heights": resolution, "camera_widths": resolution}
     env = OffScreenRenderEnv(**env_args)
+    env.seed(0)  # IMPORTANT: seed seems to affect object positions even when using fixed initial state
     # (For Octo only) Wrap the robot environment.
     if model_family == "octo":
         env = TemporalEnsembleWrapper(env, pred_horizon=4)
@@ -35,7 +36,7 @@ def get_libero_img(obs, resize_size):
     img = obs["agentview_image"]
     img = img[::-1, ::-1]  # IMPORTANT: rotate 180 degrees to match train preprocessing
     img = Image.fromarray(img)
-    img = img.resize((resize_size, resize_size), Image.Resampling.LANCZOS)  # also resize to size seen at train time
+    img = img.resize((resize_size, resize_size), Image.Resampling.LANCZOS)  # resize to size seen at train time
     img = img.convert("RGB")
     return np.array(img)
 
