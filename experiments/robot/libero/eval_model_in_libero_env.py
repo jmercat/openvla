@@ -225,7 +225,6 @@ def eval_libero(cfg: GenerateConfig) -> None:
                     action = normalize_gripper_action(action)
 
                     # Execute action in environment.
-                    print(f"t: {t}, action: {action}")
                     obs, reward, done, info = env.step(action.tolist())
                     if done:
                         task_successes += 1
