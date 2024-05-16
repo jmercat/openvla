@@ -4,11 +4,38 @@ eval_model_in_libero_env.py
 Runs a model checkpoint in a simulated libero environment.
 
 Usage:
-    python experiments/robot/libero/eval_libero.py \
-        --model.type <VLM_TYPE> \
-        --pretrained_checkpoint <CHECKPOINT_PATH>
+    OpenVLA:
+        Note: Set `center_crop==False` if not using random crop image aug'
+
+        python experiments/robot/libero/eval_model_in_libero_env.py \
+            --model_family llava \
+            --model.type <VLM_TYPE> \
+            --action_space cartesian_velocity \
+            --task_suite_name [ libero_object | libero_spatial ] \
+            --pretrained_checkpoint <CHECKPOINT_PATH> \
+            --initial_states_path <INITIAL_STATES_JSON_PATH> \
+            --center_crop [ True | False ]
+
+        Example:
+            python experiments/robot/libero/eval_model_in_libero_env.py \
+                --model_family llava \
+                --model.type siglip-224px+7b \
+                --action_space cartesian_velocity \
+                --task_suite_name libero_spatial \
+                --pretrained_checkpoint /sphinx/u/moojink/prismatic-dev/runs/siglip-224px+mx-libero_spatial+n1+b32+x7--from_siglip224_oxe_magic_soup_152K_checkpoint--regenerated_libero--image_aug/checkpoints/step-010000-epoch-47-loss=0.0319.pt \
+                --initial_states_path ./experiments/robot/libero/libero_spatial_initial_states.json \
+                --center_crop True
+
+
+    Diffusion Policy:
+        TODO
+
+
+    Octo:
+        TODO
 """
 
+import json
 import sys
 import time
 from dataclasses import dataclass, field
@@ -18,9 +45,9 @@ from typing import Union
 import draccus
 import numpy as np
 import tqdm
-import wandb
 from libero.libero import benchmark
 
+import wandb
 from prismatic.conf import ModelConfig, ModelRegistry
 
 # TODO (moojink) Hack so that the interpreter can find experiments.robot
@@ -59,7 +86,7 @@ class GenerateConfig:
         "checkpoints/step-152500-epoch-27-loss=0.1637.pt"
     )
 
-    unnorm_key: str = "libero_spatial"                          # Dataset name for action unnormalization
+    unnorm_key: str = "libero_spatial"                          # Dataset name for action unnormalization (will be overridden by `task_suite_name`)
     center_crop: bool = False                                   # Center crop? (if trained w/ random crop image aug)
 
     # Diffusion Policy args
@@ -69,11 +96,14 @@ class GenerateConfig:
     # Task suite (options: libero_spatial, libero_object, libero_goal, libero_90, libero_10, libero_100)
     task_suite_name: str = "libero_spatial"
 
+    # Initial states file
+    initial_states_path: str = "./experiments/robot/libero/libero_spatial_initial_states.json"
+
     # LIBERO-related args
     max_steps = 300                                             # Max number of steps per episode
     num_steps_wait = 10                                         # Number of steps to wait for objs to stabilize in sim
-    num_trials_per_task = 5                                     # Number of rollouts per task
-    save_videos_per_task = 5                                    # Number of videos to be logged per task
+    num_trials_per_task = 50                                    # Number of rollouts per task
+    save_videos_per_task = 50                                   # Number of videos to be logged per task
     video_temp_subsample = 5                                    # Temporal subsampling to make videos shorter
 
     # Weights & Biases
@@ -91,6 +121,13 @@ class GenerateConfig:
 @draccus.wrap()
 def eval_libero(cfg: GenerateConfig) -> None:
     assert cfg.pretrained_checkpoint is not None, "cfg.pretrained_checkpoint must not be None!"
+    if "image_aug" in cfg.pretrained_checkpoint:
+        assert cfg.center_crop, "Expecting `center_crop==True` because model was trained with image augmentations!"
+    if cfg.model_family == "diffusion_policy":
+        assert not cfg.center_crop, "Expecting `center_crop==False` because DP wrapper already handles center cropping!"
+
+    # Override action unnormalization key with task suite name.
+    cfg.unnorm_key = cfg.task_suite_name
 
     # Load Model
     model = get_model(cfg)
@@ -112,10 +149,14 @@ def eval_libero(cfg: GenerateConfig) -> None:
     # Get Expected Image Dimensions
     resize_size = get_image_resize_size(cfg)
 
-    # Initialize task suite (e.g., LIBERO-Object).
+    # Initialize task suite (e.g., LIBERO-Spatial).
     benchmark_dict = benchmark.get_benchmark_dict()
     task_suite = benchmark_dict[cfg.task_suite_name]()
     num_tasks_in_suite = task_suite.n_tasks
+
+    # Load all initial states (these should match the initial states seen in the training demos).
+    with open(cfg.initial_states_path, "r") as F:
+        all_initial_states = json.load(F)
 
     # Start evaluation.
     total_episodes, total_successes = 0, 0
@@ -125,7 +166,6 @@ def eval_libero(cfg: GenerateConfig) -> None:
 
         # Initialize the LIBERO environment.
         env, task_description = get_libero_env(task, cfg.model_family, model, resolution=256)
-        init_states = task_suite.get_task_init_states(task_id)
 
         # Start episodes.
         task_episodes, task_successes = 0, 0
@@ -134,8 +174,19 @@ def eval_libero(cfg: GenerateConfig) -> None:
 
             # Reset environment.
             obs = env.reset()
-            init_state_id = episode_idx
-            env.set_init_state(init_states[init_state_id])
+
+            # Get keys for fetching initial episode state.
+            initial_states_task_key = task_description.replace(" ", "_")
+            episode_key = f"demo_{episode_idx}"
+
+            # Skip episodes that do not have demos (e.g. because the demos did not succeed).
+            if episode_key not in all_initial_states[initial_states_task_key].keys():
+                print(f"Skipping task {task_id} episode {episode_idx} due to lack of corresponding demo!")
+                continue
+
+            # Get initial state and use it to initialize env.
+            init_state = np.array(all_initial_states[initial_states_task_key][episode_key])
+            obs = env.set_init_state(init_state)
 
             # [Diffusion Policy] Reset observation history, action chunk queue, and language input.
             if cfg.model_family == "diffusion_policy":
@@ -174,9 +225,11 @@ def eval_libero(cfg: GenerateConfig) -> None:
                     action = normalize_gripper_action(action)
 
                     # Execute action in environment.
+                    print(f"t: {t}, action: {action}")
                     obs, reward, done, info = env.step(action.tolist())
                     if done:
                         task_successes += 1
+                        total_successes += 1
                         break
                     t += 1
                 except Exception as e:
@@ -184,6 +237,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
                     break
 
             task_episodes += 1
+            total_episodes += 1
             if task_successes < cfg.save_videos_per_task or task_episodes - task_successes < cfg.save_videos_per_task:
                 # Save rollout GIF.
                 group = "success" if done else "failure"
@@ -196,6 +250,10 @@ def eval_libero(cfg: GenerateConfig) -> None:
                     }
                 )
 
+            print(f"Success: {done}")
+            print(f"# episodes completed so far: {total_episodes}")
+            print(f"# successes: {total_successes} ({total_successes / total_episodes * 100:.1f}%)")
+
         # Log and update total metrics
         wandb.log(
             {
@@ -203,8 +261,6 @@ def eval_libero(cfg: GenerateConfig) -> None:
                 f"num_episodes/{task_description}": task_episodes,
             }
         )
-        total_episodes += task_episodes
-        total_successes += task_successes
         print(f"Current task success rate: {float(task_successes) / float(task_episodes)}")
         print(f"Current total success rate: {float(total_successes) / float(total_episodes)}")
 
