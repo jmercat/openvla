@@ -5,7 +5,9 @@ Runs a model checkpoint in a simulated libero environment.
 
 Usage:
     OpenVLA:
-        Note: Set `center_crop==False` if not using random crop image aug'
+        Notes:
+            - Set `center_crop==False` if not using random crop image aug'
+            - Set initial_states_path == "DEFAULT" to use the LIBERO task suite's default initial positions.
 
         python experiments/robot/libero/eval_model_in_libero_env.py \
             --model_family llava \
@@ -155,8 +157,12 @@ def eval_libero(cfg: GenerateConfig) -> None:
     num_tasks_in_suite = task_suite.n_tasks
 
     # Load all initial states (these should match the initial states seen in the training demos).
-    with open(cfg.initial_states_path, "r") as F:
-        all_initial_states = json.load(F)
+    if cfg.initial_states_path != "DEFAULT":
+        with open(cfg.initial_states_path, "r") as F:
+            all_initial_states = json.load(F)
+        print(f"Using initial states from {cfg.initial_states_path}")
+    else:
+        print("Using default initial states")
 
     # Start evaluation.
     total_episodes, total_successes = 0, 0
@@ -167,26 +173,34 @@ def eval_libero(cfg: GenerateConfig) -> None:
         # Initialize the LIBERO environment.
         env, task_description = get_libero_env(task, cfg.model_family, model, resolution=256)
 
+        # If applicable, get default LIBERO initial states.
+        if cfg.initial_states_path == "DEFAULT":
+            initial_states = task_suite.get_task_init_states(task_id)
+
         # Start episodes.
         task_episodes, task_successes = 0, 0
         for episode_idx in tqdm.tqdm(range(cfg.num_trials_per_task)):
             print(f"\nTask: {task_description}")
 
             # Reset environment.
-            obs = env.reset()
+            env.reset()
 
-            # Get keys for fetching initial episode state.
-            initial_states_task_key = task_description.replace(" ", "_")
-            episode_key = f"demo_{episode_idx}"
+            # Either use the default initial states or fetch them from saved JSON.
+            if cfg.initial_states_path == "DEFAULT":
+                obs = env.set_init_state(initial_states[episode_idx])
+            else:
+                # Get keys for fetching initial episode state.
+                initial_states_task_key = task_description.replace(" ", "_")
+                episode_key = f"demo_{episode_idx}"
 
-            # Skip episodes that do not have demos (e.g. because the demos did not succeed).
-            if episode_key not in all_initial_states[initial_states_task_key].keys():
-                print(f"Skipping task {task_id} episode {episode_idx} due to lack of corresponding demo!")
-                continue
+                # Skip episodes that do not have demos (e.g. because the demos did not succeed).
+                if episode_key not in all_initial_states[initial_states_task_key].keys():
+                    print(f"Skipping task {task_id} episode {episode_idx} due to lack of corresponding demo!")
+                    continue
 
-            # Get initial state and use it to initialize env.
-            init_state = np.array(all_initial_states[initial_states_task_key][episode_key])
-            obs = env.set_init_state(init_state)
+                # Get initial state and use it to initialize env.
+                init_state = np.array(all_initial_states[initial_states_task_key][episode_key])
+                obs = env.set_init_state(init_state)
 
             # [Diffusion Policy] Reset observation history, action chunk queue, and language input.
             if cfg.model_family == "diffusion_policy":
