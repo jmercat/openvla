@@ -53,6 +53,9 @@ Usage:
             --pretrained_checkpoint /scr/moojink/checkpoints/kpertsch/octo_tdroid_task1_20240501_202241
 """
 
+import json_numpy
+json_numpy.patch()
+import numpy as np
 import sys
 import time
 from copy import deepcopy
@@ -106,10 +109,10 @@ class GenerateConfig:
 
     # Note (@moojink) =>> Setting initial orientation with a 30 degree offset -- more natural!
     randomize_init_robot_state: bool = False
-    camera_serial_num: str = "28451778_left"
+    camera_serial_num: str = "24514023_left"
 
     max_episodes: int = 50
-    max_steps: int = 300
+    max_steps: int = 500
     control_frequency: float = 15
 
     action_space: str = "cartesian_velocity"
@@ -135,10 +138,10 @@ class GenerateConfig:
 @draccus.wrap()
 def main(cfg: GenerateConfig) -> None:
     assert cfg.pretrained_checkpoint is not None, "cfg.pretrained_checkpoint must not be None!"
-    if "image_aug" in cfg.pretrained_checkpoint:
+    if "image_aug" in str(cfg.pretrained_checkpoint):
         assert cfg.center_crop, "Expecting `center_crop==True` because model was trained with image augmentations!"
-    if cfg.model_family == "diffusion_policy":
-        assert not cfg.center_crop, "Expecting `center_crop==False` because DP wrapper already handles center cropping!"
+    #if cfg.model_family == "diffusion_policy":
+    #    assert not cfg.center_crop, "Expecting `center_crop==False` because DP wrapper already handles center cropping!"
 
     # Load model.
     if cfg.model_family == "llava":
@@ -159,7 +162,7 @@ def main(cfg: GenerateConfig) -> None:
     env = get_droid_env(cfg)
 
     # Start evaluation.
-    task_label = ""
+    task_label = "pick the grey sponge and wipe the dirt onto the dust pan"
     episode_idx = 0
     while episode_idx < cfg.max_episodes:
         # Get task description from user.
@@ -208,13 +211,15 @@ def main(cfg: GenerateConfig) -> None:
                     # Query model to get action.
                     if cfg.model_family == "llava":
                         action = get_vla_server_action(cfg, obs, task_label, center_crop=cfg.center_crop)
+                        action[-1] = 1 - action[-1]
                     else:
+                        #import pdb; pdb.set_trace()
                         action = get_action(cfg, model, obs, task_label, policy_fn, octo_nowrap=True)
 
                     # Invert gripper action: [1 = open, 0 = close] --> [0 = open, 1 = close]
-                    action[-1] = 1 - action[-1]
 
                     # Execute action in environment.
+                    action = np.clip(action, -1, 1)
                     print("action:", action)
                     _ = env.step(action)
                     t += 1

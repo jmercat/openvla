@@ -75,7 +75,7 @@ def get_vla_server_action(cfg, obs, language_instruction, center_crop=False):
     # (If trained with image augmentations) Center crop image and then resize back up to original size.
     # IMPORTANT: Let's say crop scale == 0.9. To get the new height and width (post-crop), we must multiply
     #            the original height and width by sqrt(0.9) -- not 0.9!
-    image = obs["full_image"]
+    image = Image.fromarray(obs["full_image"])
     if center_crop:
         temp_image = np.array(image)  # (H, W, C)
         crop_scale = 0.9
@@ -89,6 +89,6 @@ def get_vla_server_action(cfg, obs, language_instruction, center_crop=False):
 
     action = requests.post(
         f"http://{cfg.vla_host}:{cfg.vla_port}/act",
-        json={"image": image, "instruction": language_instruction, "unnorm_key": cfg.dataset_name},
+        json={"image": np.array(image), "instruction": language_instruction, "unnorm_key": cfg.unnorm_key},
     ).json()
-    return action
+    return np.array(action)
