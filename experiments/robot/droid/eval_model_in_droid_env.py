@@ -211,16 +211,16 @@ def main(cfg: GenerateConfig) -> None:
                     # Query model to get action.
                     if cfg.model_family == "llava":
                         action = get_vla_server_action(cfg, obs, task_label, center_crop=cfg.center_crop)
+                        # Invert gripper action: [1 = open, 0 = close] --> [0 = open, 1 = close]
                         action[-1] = 1 - action[-1]
                     else:
-                        #import pdb; pdb.set_trace()
                         action = get_action(cfg, model, obs, task_label, policy_fn, octo_nowrap=True)
 
-                    # Invert gripper action: [1 = open, 0 = close] --> [0 = open, 1 = close]
 
                     # Execute action in environment.
-                    action = np.clip(action, -1, 1)
-                    print("action:", action)
+                    print("action: ", action)
+                    if cfg.action_space == "cartesian_velocity":
+                        action = np.clip(action, -1, 1)
                     _ = env.step(action)
                     t += 1
 
