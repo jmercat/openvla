@@ -113,7 +113,7 @@ def finetune(cfg: FinetuneConfig) -> None:
     # Wrap model in PEFT for LoRA finetuning
     lora_config = LoraConfig(
         r=cfg.lora_rank,
-        lora_alpha=min(cfg.lora_rank, 32),
+        lora_alpha=min(cfg.lora_rank, 16),
         lora_dropout=cfg.lora_dropout,
         target_modules="all-linear",
         init_lora_weights="gaussian",
@@ -141,6 +141,11 @@ def finetune(cfg: FinetuneConfig) -> None:
         image_aug=True,
     )
     save_dataset_statistics(vla_dataset.dataset_statistics, run_dir)
+
+    # Overwrite dataset statistics in model with stats of finetuning dataset
+    # (these statistics will be used to un-normalize action predictions during inference)
+    vla.norm_stats = vla_dataset.dataset_statistics
+
     dataloader = DataLoader(
         vla_dataset,
         batch_size=cfg.batch_size,
