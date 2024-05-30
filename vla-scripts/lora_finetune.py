@@ -58,12 +58,12 @@ class FinetuneConfig:
     run_root_dir: Path = Path("/raid/users/karl/models")            # Path to directory to store logs & checkpoints
 
     # Finetune arguments
-    lora_rank: int = 8                                              # Rank of LoRA weight matrix
-    lora_dropout: float = 0.1                                       # Dropout applied to LoRA weights
+    lora_rank: int = 32                                             # Rank of LoRA weight matrix
+    lora_dropout: float = 0.0                                       # Dropout applied to LoRA weights
     use_dora: bool = False                                          # Whether to use weight-decomposed LoRA (DoRA)
     use_qlora: bool = False                                         # Whether to load model quantized for LoRA finetuning
     batch_size: int = 16                                            # Finetuning batch size
-    max_steps: int = 20000                                          # Max number of finetuning steps
+    max_steps: int = 30000                                          # Max number of finetuning steps
     learning_rate: float = 2e-5                                     # Finetuning learning rate
     grad_accumulation_steps: int = 1                                # Steps of gradient accumulation
 
