@@ -113,7 +113,7 @@ def finetune(cfg: FinetuneConfig) -> None:
     # Wrap model in PEFT for LoRA finetuning
     lora_config = LoraConfig(
         r=cfg.lora_rank,
-        lora_alpha=cfg.lora_rank,
+        lora_alpha=min(cfg.lora_rank, 32),
         lora_dropout=cfg.lora_dropout,
         target_modules="all-linear",
         init_lora_weights="gaussian",
