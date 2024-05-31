@@ -105,7 +105,11 @@ class PaddedCollatorForActionPrediction:
     def __call__(self, instances: Sequence[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
         input_ids, labels = tuple([instance[key] for instance in instances] for key in ("input_ids", "labels"))
         pixel_values = [instance["pixel_values"] for instance in instances]
-        dataset_names = [instance["dataset_name"] for instance in instances]
+        if "dataset_name" in instances[0]:
+            dataset_names = [instance["dataset_name"] for instance in instances]
+        else:
+            # TODO: figure out why HuggingFace trainer removes the "dataset_name" attribute
+            dataset_names = None
 
         # For now, we only support Tokenizers with `padding_side = "right"` during training
         #   => Handle padding via RNN Utils => `pad_sequence`
@@ -132,10 +136,12 @@ class PaddedCollatorForActionPrediction:
         else:
             raise ValueError(f"Unsupported `pixel_values` type = {type(pixel_values)}")
 
-        return dict(
+        output = dict(
             pixel_values=pixel_values,
             input_ids=input_ids,
             attention_mask=attention_mask,
             labels=labels,
-            dataset_names=dataset_names,
         )
+        if dataset_names is not None:
+            output["dataset_names"] = dataset_names
+        return output
