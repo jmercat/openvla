@@ -117,8 +117,10 @@ def finetune(cfg: FinetuneConfig) -> None:
         torch_dtype=torch.bfloat16,
         low_cpu_mem_usage=True,
         trust_remote_code=True,
+        load_in_8bit=cfg.load_in_8bit,
+        load_in_4bit=cfg.load_in_4bit,
     )
-    if not cfg.load_in_8bit or cfg.load_in_4bit:
+    if not (cfg.load_in_8bit or cfg.load_in_4bit):
         vla = vla.to(device)
 
     # Wrap model in PEFT for LoRA finetuning
