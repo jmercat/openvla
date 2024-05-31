@@ -191,7 +191,7 @@ def finetune(cfg: FinetuneConfig) -> None:
         max_steps=cfg.max_steps,
         logging_strategy="steps",
         logging_steps=1,
-        save_steps=10,
+        save_steps=1000,
         save_total_limit=1,  # only keep most recent checkpoint
     )
     trainer = TrainLogTrainer(
