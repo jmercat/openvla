@@ -13,7 +13,7 @@ from typing import Union
 import draccus
 import timm
 import torch
-from peft import LoraConfig, get_peft_model
+from peft import LoraConfig, PeftModel, get_peft_model
 from transformers import AutoModelForVision2Seq, AutoProcessor, Trainer, TrainingArguments
 
 import wandb
@@ -167,8 +167,8 @@ def finetune(cfg: FinetuneConfig) -> None:
         continuous_actions_gt = torch.tensor(action_tokenizer.decode_token_ids_to_actions(action_gt[mask].cpu().numpy()))
         action_l1_loss = torch.nn.functional.l1_loss(continuous_actions_pred, continuous_actions_gt)
         return {
-            "action_accuracy": action_accuracy,
-            "l1_loss": action_l1_loss,
+            "action_accuracy": action_accuracy.cpu().numpy().item(),
+            "l1_loss": action_l1_loss.cpu().numpy().item(),
         }
 
     # Initialize logging
@@ -205,6 +205,27 @@ def finetune(cfg: FinetuneConfig) -> None:
 
     # Run training
     trainer.train()
+
+    # HuggingFace Trainer only saves adapter weights for LoRA finetuning
+    # This still allows to load the model with vla = AutoModel.from_pretrained(...)
+    # But inference is ~30% slower because of LoRA weight overhead
+    # --> here we merge LoRA weights back into base weights for the final checkpoint
+    #     this way we get fast inference (at the cost of saving a full model checkpoint)
+    if cfg.use_lora:
+        print("Saving merged LoRA checkpoint...")
+        base_vla = AutoModelForVision2Seq.from_pretrained(
+            cfg.vla_path,
+            torch_dtype=torch.bfloat16,
+            low_cpu_mem_usage=True,
+            trust_remote_code=True,
+        )
+        merged_vla = PeftModel.from_pretrained(base_vla, run_dir / f"checkpoint-{cfg.max_steps}")
+        merged_vla = merged_vla.merge_and_unload()
+        merged_vla.norm_stats = vla_dataset.dataset_statistics
+        merged_vla.save_pretrained(run_dir)
+
+        # Save processor
+        processor.save_pretrained(run_dir)
 
 
 if __name__ == "__main__":
