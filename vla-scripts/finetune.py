@@ -1,7 +1,10 @@
 """
-finetune.py
+lora_finetune.py
 
-Simple script that demonstrates finetuning a pre-trained OpenVLA model via the HF Trainer.
+Simple script for parameter-efficient finetuning of OpenVLA.
+Usage:
+    - [One-GPU] : torchrun --nproc-per-node 1 vla-scripts/finetune.py
+    - [Multi-GPU (= $K)]: torchrun --nproc-per-node $K vla-scripts/finetune.py
 """
 
 import os
@@ -13,8 +16,15 @@ from typing import Union
 import draccus
 import timm
 import torch
-from peft import LoraConfig, PeftModel, get_peft_model
-from transformers import AutoModelForVision2Seq, AutoProcessor, Trainer, TrainingArguments
+import torch.distributed as dist
+import tqdm
+from accelerate import PartialState
+from peft import LoraConfig, PeftModel, get_peft_model, prepare_model_for_kbit_training
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.optim import AdamW
+from torch.utils.data import DataLoader
+from transformers import AutoModelForVision2Seq, AutoProcessor, BitsAndBytesConfig
+from transformers.modeling_outputs import CausalLMOutputWithPast
 
 import wandb
 from prismatic.models.backbones.llm.prompting import VicunaV15ChatPromptBuilder
@@ -40,24 +50,6 @@ def create_vision_transform(vla, input_size):
     )
 
 
-class TrainLogTrainer(Trainer):
-    """Subclass Huggingface Trainer to log values on train set."""
-
-    def __init__(self, *args, **kwargs):
-        self._train_log_function = kwargs.pop("train_log_function")
-        super().__init__(*args, **kwargs)
-
-    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
-        """
-        How the loss is computed by Trainer. By default, all models return the loss in the first element.
-
-        Subclass and override for custom behavior.
-        """
-        loss, outputs = super().compute_loss(model, inputs, return_outputs=True, **kwargs)
-        self.log(self._train_log_function(inputs, outputs))
-        return (loss, outputs) if return_outputs else loss
-
-
 @dataclass
 class FinetuneConfig:
     # fmt: off
@@ -70,19 +62,21 @@ class FinetuneConfig:
     )
     dataset_name: str = "droid_wipe"                                # Name of dataset to finetune on
     run_root_dir: Path = Path("/raid/users/karl/models")            # Path to directory to store logs & checkpoints
+    temp_root_dir: Path = Path("/tmp")                              # Temp dir for storing LoRA adapter before fusing
 
     # Finetune arguments
-    per_device_batch_size: int = 16                                 # Finetuning batch size per device
-    max_steps: int = 30000                                          # Max number of finetuning steps
+    batch_size: int = 16                                            # Finetuning batch size
+    max_steps: int = 30_000                                         # Max number of finetuning steps
+    save_steps: int = 1000                                          # Interval for checkpoint saving
     learning_rate: float = 2e-5                                     # Finetuning learning rate
     grad_accumulation_steps: int = 1                                # Steps of gradient accumulation
 
-    # LoRA parameters
-    use_lora: bool = False                                          # Whether to use LoRA during finetuning
+    # LoRA arguments
+    use_lora: bool = True                                           # Whether to use LoRA finetuning
     lora_rank: int = 32                                             # Rank of LoRA weight matrix
     lora_dropout: float = 0.0                                       # Dropout applied to LoRA weights
-    load_in_8bit: bool = False                                      # Load model in 8 bit for QLoRA finetuning
-    load_in_4bit: bool = False                                      # Load model in 4 bit for QLoRA finetuning
+    use_quantization: bool = False                                  # Whether to load model quantized for LoRA finetuning
+                                                                    # CAUTION: reduces memory, but hurts performance
 
     # HF Hub Credentials (for any gated models)
     hf_token: Union[str, Path] = Path(".hf_token")                  # Environment variable or Path to HF Token
@@ -94,33 +88,45 @@ class FinetuneConfig:
 
 @draccus.wrap()
 def finetune(cfg: FinetuneConfig) -> None:
-    if cfg.load_in_8bit or cfg.load_in_4bit:
-        assert cfg.use_lora, "Only support 8bit or 4bit finetuning when using LoRA"
-
     # Initialize
+    distributed_state = PartialState()
     exp_id = (
         f"{cfg.vla_path.split('/')[-1]}_{cfg.dataset_name}"
-        f"_per_device_bs{cfg.per_device_batch_size * cfg.grad_accumulation_steps}"
+        f"_bs{cfg.batch_size * cfg.grad_accumulation_steps}"
         f"_lr{cfg.learning_rate}"
     )
     if cfg.use_lora:
-        exp_id += f"_lora_r{cfg.lora_rank}_dropout{cfg.lora_dropout}" f"_8bit_{cfg.load_in_8bit}_4bit_{cfg.load_in_4bit}"
+        exp_id += f"_lora_r{cfg.lora_rank}" f"_dropout{cfg.lora_dropout}"
+    if cfg.use_quantization:
+        exp_id += "_4bit"
     run_dir = cfg.run_root_dir / exp_id
+    temp_dir = cfg.temp_root_dir / exp_id
     os.makedirs(run_dir, exist_ok=True)
 
     # Load pre-trained VLA
     assert torch.cuda.is_available()
-    device = torch.device("cuda")
+    device = distributed_state.local_process_index
     processor = AutoProcessor.from_pretrained(cfg.vla_path, trust_remote_code=True)
+
+    if cfg.use_quantization:
+        assert cfg.use_lora, "Quantized training only supported for LoRA finetuning."
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True, bnb_4bit_quant_type="nf4", bnb_4bit_compute_dtype=torch.float16
+        )
+    else:
+        bnb_config = None
+
     vla = AutoModelForVision2Seq.from_pretrained(
         cfg.vla_path,
         torch_dtype=torch.bfloat16,
         low_cpu_mem_usage=True,
+        quantization_config=bnb_config,
         trust_remote_code=True,
-        load_in_8bit=cfg.load_in_8bit,
-        load_in_4bit=cfg.load_in_4bit,
     )
-    if not (cfg.load_in_8bit or cfg.load_in_4bit):
+    if cfg.use_quantization:
+        vla = prepare_model_for_kbit_training(vla)
+    else:
+        # BnB handles device placement automatically for quantized training
         vla = vla.to(device)
 
     # Wrap model in PEFT for LoRA finetuning
@@ -135,99 +141,120 @@ def finetune(cfg: FinetuneConfig) -> None:
         vla = get_peft_model(vla, lora_config)
         vla.print_trainable_parameters()
 
+    # Manually set requires_grad = False for unused final-layer params in vision encoder
+    for module in [vla.vision_backbone.attn_pool, vla.vision_backbone.norm, vla.vision_backbone.blocks[-1]]:
+        for param in module.parameters():
+            param.requires_grad = False
+
+    # wrap VLA in PyTorch DDP wrapper for multi-GPU training
+    vla = DDP(vla, device_ids=[device], gradient_as_bucket_view=True)
+
+    # Create optimizer
+    trainable_params = [param for param in vla.parameters() if param.requires_grad]
+    optimizer = AdamW(trainable_params, lr=cfg.learning_rate)
+
     # Load training data
     vla_dataset, action_tokenizer, collator = get_vla_dataset_and_collator(
         cfg.data_root_dir,
         cfg.dataset_name,
-        image_transform=create_vision_transform(vla, vla.config.image_size),
+        image_transform=create_vision_transform(vla.module, vla.module.config.image_size),
         tokenizer=processor.tokenizer,
         prompt_builder_fn=VicunaV15ChatPromptBuilder,
-        default_image_resolution=(3, vla.config.image_size, vla.config.image_size),
+        default_image_resolution=(3, vla.module.config.image_size, vla.module.config.image_size),
         shuffle_buffer_size=100_000,
         image_aug=True,
     )
     save_dataset_statistics(vla_dataset.dataset_statistics, run_dir)
 
-    # Overwrite dataset statistics in model with stats of finetuning dataset
-    # (these statistics will be used to un-normalize action predictions during inference)
-    vla.norm_stats = vla_dataset.dataset_statistics
-
-    # Define function for logging train accuracy and L1 loss
-    def compute_train_metrics(inputs, outputs):
-        action_preds = outputs.logits[:, vla.vision_backbone.patch_embed.num_patches : -1].argmax(dim=2)
-        action_gt = inputs["labels"][:, 1:].to(action_preds.device)
-        mask = action_gt > action_tokenizer.action_token_begin_idx
-
-        # Compute Accuracy
-        correct_preds = (action_preds == action_gt) & mask
-        action_accuracy = correct_preds.sum().float() / mask.sum().float()
-
-        # Compute L1 Loss on Predicted (Continuous) Actions
-        continuous_actions_pred = torch.tensor(
-            action_tokenizer.decode_token_ids_to_actions(action_preds[mask].cpu().numpy())
-        )
-        continuous_actions_gt = torch.tensor(action_tokenizer.decode_token_ids_to_actions(action_gt[mask].cpu().numpy()))
-        action_l1_loss = torch.nn.functional.l1_loss(continuous_actions_pred, continuous_actions_gt)
-        return {
-            "action_accuracy": action_accuracy.cpu().numpy().item(),
-            "l1_loss": action_l1_loss.cpu().numpy().item(),
-        }
+    dataloader = DataLoader(
+        vla_dataset,
+        batch_size=cfg.batch_size,
+        sampler=None,
+        collate_fn=collator,
+        num_workers=0,
+    )
 
     # Initialize logging
-    wandb.init(
-        entity=cfg.wandb_entity,
-        project=cfg.wandb_project,
-        name=f"FT-OPENVLA-{exp_id}-{DATE_TIME}",
-    )
-
-    # Create HuggingFace Trainer
-    args = TrainingArguments(
-        output_dir=run_dir,
-        per_device_train_batch_size=cfg.per_device_batch_size,
-        seed=42,
-        report_to="wandb",
-        bf16=True,
-        learning_rate=cfg.learning_rate,
-        gradient_accumulation_steps=cfg.grad_accumulation_steps,
-        gradient_checkpointing=True,
-        max_steps=cfg.max_steps,
-        logging_strategy="steps",
-        logging_steps=1,
-        save_steps=1000,
-        save_total_limit=1,  # only keep most recent checkpoint
-    )
-    trainer = TrainLogTrainer(
-        model=vla,
-        args=args,
-        train_dataset=vla_dataset,
-        data_collator=collator,
-        train_log_function=compute_train_metrics,
-        tokenizer=processor,
-    )
-
-    # Run training
-    trainer.train()
-
-    # HuggingFace Trainer only saves adapter weights for LoRA finetuning
-    # This still allows to load the model with vla = AutoModel.from_pretrained(...)
-    # But inference is ~30% slower because of LoRA weight overhead
-    # --> here we merge LoRA weights back into base weights for the final checkpoint
-    #     this way we get fast inference (at the cost of saving a full model checkpoint)
-    if cfg.use_lora:
-        print("Saving merged LoRA checkpoint...")
-        base_vla = AutoModelForVision2Seq.from_pretrained(
-            cfg.vla_path,
-            torch_dtype=torch.bfloat16,
-            low_cpu_mem_usage=True,
-            trust_remote_code=True,
+    if distributed_state.is_main_process:
+        wandb.init(
+            entity=cfg.wandb_entity,
+            project=cfg.wandb_project,
+            name=f"FT-LORA-{exp_id}-{DATE_TIME}",
         )
-        merged_vla = PeftModel.from_pretrained(base_vla, run_dir / f"checkpoint-{cfg.max_steps}")
-        merged_vla = merged_vla.merge_and_unload()
-        merged_vla.norm_stats = vla_dataset.dataset_statistics
-        merged_vla.save_pretrained(run_dir)
 
-        # Save processor
-        processor.save_pretrained(run_dir)
+    with tqdm.tqdm(
+        total=cfg.max_steps,
+        leave=False,
+    ) as progress:
+        vla.train()
+        optimizer.zero_grad()
+        for step, batch in enumerate(dataloader):
+            with torch.autocast("cuda", dtype=torch.bfloat16):
+                output: CausalLMOutputWithPast = vla(
+                    input_ids=batch["input_ids"].to(device),
+                    attention_mask=batch["attention_mask"].to(device),
+                    pixel_values=batch["pixel_values"].to(torch.bfloat16).to(device),
+                    labels=batch["labels"],
+                )
+            loss = output.loss
+            loss.backward()
+
+            # Compute accuracy and L1 loss for logging
+            action_preds = output.logits[:, vla.module.vision_backbone.patch_embed.num_patches : -1].argmax(dim=2)
+            action_gt = batch["labels"][:, 1:].to(action_preds.device)
+            mask = action_gt > action_tokenizer.action_token_begin_idx
+
+            # Compute Accuracy
+            correct_preds = (action_preds == action_gt) & mask
+            action_accuracy = correct_preds.sum().float() / mask.sum().float()
+
+            # Compute L1 Loss on Predicted (Continuous) Actions
+            continuous_actions_pred = torch.tensor(
+                action_tokenizer.decode_token_ids_to_actions(action_preds[mask].cpu().numpy())
+            )
+            continuous_actions_gt = torch.tensor(
+                action_tokenizer.decode_token_ids_to_actions(action_gt[mask].cpu().numpy())
+            )
+            action_l1_loss = torch.nn.functional.l1_loss(continuous_actions_pred, continuous_actions_gt)
+
+            if distributed_state.is_main_process and step % 10 == 0:
+                wandb.log(
+                    {
+                        "train_loss": loss,
+                        "action_accuracy": action_accuracy,
+                        "l1_loss": action_l1_loss,
+                    },
+                    step=step,
+                )
+
+            # Optimizer Step
+            if (step + 1) % cfg.grad_accumulation_steps == 0:
+                optimizer.step()
+                progress.update()
+
+            if step > 0 and step % cfg.save_steps == 0:
+                if distributed_state.is_main_process:
+                    print(f"Saving model checkpoint, step {step}...")
+                    # If using LoRA we first save adapter weights, then merge weights for faster inference
+                    # Otherwise, we simply save the weights
+                    save_dir = temp_dir if cfg.use_lora else run_dir
+                    vla.module.save_pretrained(save_dir)
+
+                    # Merge LoRA weights into model backbone for faster inference
+                    if cfg.use_lora:
+                        base_vla = AutoModelForVision2Seq.from_pretrained(
+                            cfg.vla_path,
+                            torch_dtype=torch.bfloat16,
+                            low_cpu_mem_usage=True,
+                            trust_remote_code=True,
+                        )
+                        merged_vla = PeftModel.from_pretrained(base_vla, temp_dir)
+                        merged_vla = merged_vla.merge_and_unload()
+                        merged_vla.save_pretrained(run_dir)
+
+                    # Save processor
+                    processor.save_pretrained(run_dir)
+                dist.barrier()
 
 
 if __name__ == "__main__":
