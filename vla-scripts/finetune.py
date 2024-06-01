@@ -28,7 +28,9 @@ from transformers.modeling_outputs import CausalLMOutputWithPast
 
 import wandb
 from prismatic.models.backbones.llm.prompting import VicunaV15ChatPromptBuilder
-from prismatic.vla import get_vla_dataset_and_collator
+from prismatic.util.data_utils import PaddedCollatorForActionPrediction
+from prismatic.vla.action_tokenizer import ActionTokenizer
+from prismatic.vla.datasets import RLDSBatchTransform, RLDSDataset
 from prismatic.vla.datasets.rlds.utils.data_utils import save_dataset_statistics
 
 # Sane Defaults
@@ -142,36 +144,49 @@ def finetune(cfg: FinetuneConfig) -> None:
         vla.print_trainable_parameters()
 
     # Manually set requires_grad = False for unused final-layer params in vision encoder
+    # to not trip up DDP (we use the second-to-last layer features)
     for module in [vla.vision_backbone.attn_pool, vla.vision_backbone.norm, vla.vision_backbone.blocks[-1]]:
         for param in module.parameters():
             param.requires_grad = False
 
-    # wrap VLA in PyTorch DDP wrapper for multi-GPU training
+    # Wrap VLA in PyTorch DDP wrapper for multi-GPU training
     vla = DDP(vla, device_ids=[device], gradient_as_bucket_view=True)
 
     # Create optimizer
     trainable_params = [param for param in vla.parameters() if param.requires_grad]
     optimizer = AdamW(trainable_params, lr=cfg.learning_rate)
 
-    # Load training data
-    vla_dataset, action_tokenizer, collator = get_vla_dataset_and_collator(
+    # Load training data --> we use OpenX-style RLDS dataset by default
+    # For a simple torch.data.Dataset example, see [COLAB]
+    action_tokenizer = ActionTokenizer(processor.tokenizer)
+    batch_transform = RLDSBatchTransform(
+        action_tokenizer,
+        processor.tokenizer,
+        image_transform=create_vision_transform(vla.module, vla.module.config.image_size),
+        prompt_builder_fn=VicunaV15ChatPromptBuilder,
+    )
+    vla_dataset = RLDSDataset(
         cfg.data_root_dir,
         cfg.dataset_name,
-        image_transform=create_vision_transform(vla.module, vla.module.config.image_size),
-        tokenizer=processor.tokenizer,
-        prompt_builder_fn=VicunaV15ChatPromptBuilder,
-        default_image_resolution=(3, vla.module.config.image_size, vla.module.config.image_size),
+        batch_transform,
+        resize_resolution=(vla.module.config.image_size, vla.module.config.image_size),
         shuffle_buffer_size=100_000,
-        image_aug=True,
+        image_aug=True,  # we add image augmentation during finetuning by default
     )
+
+    # Save dataset statistics for inference action de-normalization
     save_dataset_statistics(vla_dataset.dataset_statistics, run_dir)
 
+    # Create collator and training data loader
+    collator = PaddedCollatorForActionPrediction(
+        processor.tokenizer.model_max_length, processor.tokenizer.pad_token_id, padding_side="right"
+    )
     dataloader = DataLoader(
         vla_dataset,
         batch_size=cfg.batch_size,
         sampler=None,
         collate_fn=collator,
-        num_workers=0,
+        num_workers=0,  # important: set to 0 since RLDS is handling parallelism
     )
 
     # Initialize logging
@@ -179,7 +194,7 @@ def finetune(cfg: FinetuneConfig) -> None:
         wandb.init(
             entity=cfg.wandb_entity,
             project=cfg.wandb_project,
-            name=f"FT-LORA-{exp_id}-{DATE_TIME}",
+            name=f"FT-{exp_id}-{DATE_TIME}",
         )
 
     with tqdm.tqdm(
