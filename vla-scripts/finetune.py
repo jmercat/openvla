@@ -67,7 +67,7 @@ class FinetuneConfig:
     temp_root_dir: Path = Path("/tmp")                              # Temp dir for storing LoRA adapter before fusing
 
     # Finetune arguments
-    batch_size: int = 16                                            # Finetuning batch size
+    batch_size: int = 64                                            # Finetuning batch size
     max_steps: int = 30_000                                         # Max number of finetuning steps
     save_steps: int = 1000                                          # Interval for checkpoint saving
     learning_rate: float = 2e-5                                     # Finetuning learning rate
@@ -112,17 +112,17 @@ def finetune(cfg: FinetuneConfig) -> None:
 
     if cfg.use_quantization:
         assert cfg.use_lora, "Quantized training only supported for LoRA finetuning."
-        bnb_config = BitsAndBytesConfig(
-            load_in_4bit=True, bnb_4bit_quant_type="nf4", bnb_4bit_compute_dtype=torch.float16
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=True, bnb_4bit_compute_dtype=torch.bfloat16, bnb_4bit_quant_type="nf4"
         )
     else:
-        bnb_config = None
+        quantization_config = None
 
     vla = AutoModelForVision2Seq.from_pretrained(
         cfg.vla_path,
         torch_dtype=torch.bfloat16,
         low_cpu_mem_usage=True,
-        quantization_config=bnb_config,
+        quantization_config=quantization_config,
         trust_remote_code=True,
     )
     if cfg.use_quantization:
@@ -156,9 +156,24 @@ def finetune(cfg: FinetuneConfig) -> None:
     trainable_params = [param for param in vla.parameters() if param.requires_grad]
     optimizer = AdamW(trainable_params, lr=cfg.learning_rate)
 
-    # Load training data --> we use OpenX-style RLDS dataset by default
-    # For a simple torch.data.Dataset example, see [COLAB]
+    # Create action tokenizer
     action_tokenizer = ActionTokenizer(processor.tokenizer)
+
+    # Load training data --> we use OpenX-style RLDS dataset by default
+    # For a simple custom PyTorch Dataset example, without RLDS, see below
+    # Note: RLDS datasets loop infinitely, if your PyTorch dataset does not, you need to add an
+    #       epoch loop around the `for batch in dataloader:` loop below!
+
+    ################################ Example PyTorch Dataset ################################
+    # from prismatic.vla.datasets import DummyDataset
+    # vla_dataset = DummyDataset(
+    #     action_tokenizer,
+    #     processor.tokenizer,
+    #     image_transform=create_vision_transform(vla.module, vla.module.config.image_size),
+    #     prompt_builder_fn=VicunaV15ChatPromptBuilder,
+    # )
+    #########################################################################################
+
     batch_transform = RLDSBatchTransform(
         action_tokenizer,
         processor.tokenizer,
