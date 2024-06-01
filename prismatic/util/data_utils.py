@@ -104,7 +104,6 @@ class PaddedCollatorForActionPrediction:
         if "dataset_name" in instances[0]:
             dataset_names = [instance["dataset_name"] for instance in instances]
         else:
-            # TODO: figure out why HuggingFace trainer removes the "dataset_name" attribute
             dataset_names = None
 
         # For now, we only support Tokenizers with `padding_side = "right"` during training

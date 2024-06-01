@@ -185,7 +185,6 @@ def train(cfg: TrainConfig) -> None:
         tokenizer=vlm.llm_backbone.get_tokenizer(),
         prompt_builder_fn=vlm.llm_backbone.prompt_builder_fn,
         default_image_resolution=vlm.vision_backbone.default_image_resolution,
-        action_chunk_length=cfg.vla.action_chunk_length,
         shuffle_buffer_size=cfg.vla.shuffle_buffer_size,
         image_aug=cfg.image_aug,
     )

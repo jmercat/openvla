@@ -30,9 +30,6 @@ class VLAConfig(ChoiceRegistry):
     data_mix: str                                   # Open-X Embodiment Dataset =>> Unique Mixture ID (e.g., `bridge`)
     shuffle_buffer_size: int                        # Size of Shuffle Buffer (100K for Bridge, 1M for OXE)
 
-    # Model Parameters
-    action_chunk_length: int                        # Length of action chunks predicted by the model
-
     # Optimization Parameters
     epochs: int                                     # Epochs to Run (in case `max_steps` is not specified)
     max_steps: Optional[int]                        # [Optional] Max Gradient Steps to Run (overrides `epochs`)
@@ -72,9 +69,6 @@ class Exp_LLaVa15_Bridge(VLAConfig):
     # Data Mixture Parameters
     data_mix: str = "bridge"
     shuffle_buffer_size: int = 256_000
-
-    # Model Parameters
-    action_chunk_length: int = 1
 
     # Optimization Parameters
     epochs: int = 1000
@@ -297,16 +291,6 @@ class Exp_SigLIP_224px_Droid_Wipe(Exp_LLaVa15_Bridge):
     learning_rate: float = 2e-5
 
 
-@dataclass
-class Exp_SigLIP_224px_Droid_Wipe_Chunk16(Exp_LLaVa15_Bridge):
-    vla_id: str = "siglip-224px+mx-droid_wipe-chunk16"
-    base_vlm: Union[str, Path] = "siglip-224px+7b"
-
-    data_mix: str = "droid_wipe"
-    learning_rate: float = 2e-5
-    action_chunk_length: int = 16
-
-
 # === Define a VLA Registry Enum for Reference & Validation ===
 @unique
 class VLARegistry(Enum):
@@ -353,7 +337,6 @@ class VLARegistry(Enum):
 
     # [05/14] DROID Wipe Runs
     SIGLIP_224PX_MX_DROID_WIPE = Exp_SigLIP_224px_Droid_Wipe
-    SIGLIP_224PX_MX_DROID_WIPE_CHUNK16 = Exp_SigLIP_224px_Droid_Wipe_Chunk16
 
     @property
     def vla_id(self) -> str:
