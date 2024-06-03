@@ -15,17 +15,6 @@ Usage:
             --unnorm_key <DATASET_NAME> \
             --pretrained_checkpoint <CHECKPOINT_PATH>
 
-        Example:
-            python experiments/robot/tdroid/eval_model_in_tdroid_env.py \
-                --model_family llava \
-                --model.type siglip-224px+7b \
-                --action_space cartesian_velocity \
-                --center_crop True \
-                --unnorm_key mjk_panda_4 \
-                --pretrained_checkpoint /scr/moojink/checkpoints/moojink/prismatic-dev/runs/
-                  siglip-224px+mx-mjk_panda_4+n1+b32+x7--from_siglip224_oxe_magic_soup_152K_checkpoint
-                  --image_aug/checkpoints/step-015000-epoch-681-loss=0.0004.pt
-
     Diffusion Policy:
         Note: Always set `center_crop==False` because DP wrapper already center crops
 
@@ -35,22 +24,14 @@ Usage:
             --center_crop False \
             --pretrained_checkpoint <CHECKPOINT_PATH>
 
-        Example:
-            python experiments/robot/tdroid/eval_model_in_tdroid_env.py \
-                --model_family diffusion_policy \
-                --action_space cartesian_position \
-                --center_crop False \
-                --pretrained_checkpoint /iris/u/moojink/prismatic-dev/droid_dp_runs/droid/im/
-                diffusion_policy/04-29-None/bz_128_noise_samples_8_sample_weights_1_dataset_names
-                _mjk_panda_4_abs_cams_static_ldkeys_proprio-lang_visenc_VisualCore_fuser_None/
-                20240429213208/models/model_epoch_2900.pth
-
     Octo:
+        Note: Always set `center_crop==False` for Octo
 
         python experiments/robot/tdroid/eval_model_in_tdroid_env.py \
             --model_family octo \
             --action_space cartesian_velocity \
-            --pretrained_checkpoint /scr/moojink/checkpoints/kpertsch/octo_tdroid_task1_20240501_202241
+            --center_crop False \
+            --pretrained_checkpoint <CHECKPOINT_PATH>
 """
 
 import sys
