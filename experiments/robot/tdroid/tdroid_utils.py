@@ -18,7 +18,6 @@ sys.path.append(".")
 
 # Initialize important constants and pretty-printing mode in NumPy.
 ACTION_DIM = 7
-BRIDGE_PROPRIO_DIM = 7
 DATE_TIME = time.strftime("%Y_%m_%d-%H_%M_%S")
 DEVICE = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
 np.set_printoptions(formatter={"float": lambda x: "{0:0.2f}".format(x)})
@@ -62,12 +61,6 @@ def save_rollout_video(rollout_images, idx):
         video_writer.append_data(img)
     video_writer.close()
     print(f"Saved rollout MP4 at path {mp4_path}")
-
-
-def resize_image(img, resize_size):
-    """Takes numpy array corresponding to a single image and returns resized image as numpy array."""
-    assert isinstance(resize_size, tuple)
-    return img
 
 
 def get_preprocessed_image(obs, resize_size):

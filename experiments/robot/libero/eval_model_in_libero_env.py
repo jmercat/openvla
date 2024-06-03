@@ -18,20 +18,8 @@ Usage:
             --initial_states_path <INITIAL_STATES_JSON_PATH> \
             --center_crop [ True | False ]
 
-        Example:
-            python experiments/robot/libero/eval_model_in_libero_env.py \
-                --model_family llava \
-                --model.type siglip-224px+7b \
-                --action_space cartesian_velocity \
-                --task_suite_name libero_spatial \
-                --pretrained_checkpoint /sphinx/u/moojink/prismatic-dev/runs/siglip-224px+mx-libero_spatial+n1+b32+x7--from_siglip224_oxe_magic_soup_152K_checkpoint--regenerated_libero--image_aug/checkpoints/step-010000-epoch-47-loss=0.0319.pt \
-                --initial_states_path ./experiments/robot/libero/libero_spatial_initial_states.json \
-                --center_crop True
-
-
     Diffusion Policy:
         TODO
-
 
     Octo:
         TODO
@@ -116,7 +104,7 @@ class GenerateConfig:
     hf_token: Union[str, Path] = Path(".hf_token")              # Environment variable or Path to HF Token
 
     # Randomness
-    seed: int = 21                                              # Random Seed (for reproducibility)
+    seed: int = 7                                               # Random Seed (for reproducibility)
     # fmt: on
 
 

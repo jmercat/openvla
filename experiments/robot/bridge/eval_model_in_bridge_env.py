@@ -92,7 +92,7 @@ class GenerateConfig:
     hf_token: Union[str, Path] = Path(".hf_token")              # Environment variable or Path to HF Token
 
     # Randomness
-    seed: int = 21                                              # Random Seed (for reproducibility)
+    seed: int = 7                                               # Random Seed (for reproducibility)
     # fmt: on
 
 

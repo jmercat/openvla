@@ -121,7 +121,7 @@ class GenerateConfig:
     hf_token: Union[str, Path] = Path(".hf_token")              # Environment variable or Path to HF Token
 
     # Randomness
-    seed: int = 21                                              # Random Seed (for reproducibility)
+    seed: int = 7                                               # Random Seed (for reproducibility)
     # fmt: on
 
 
@@ -195,8 +195,9 @@ def main(cfg: GenerateConfig) -> None:
                     # Get preprocessed image.
                     obs["full_image"] = get_preprocessed_image(obs, resize_size)
 
-                    # Override original camera obs with preprocessed one (necessary for Diffusion Policy).
-                    obs["image"][cfg.camera_serial_num] = obs["full_image"]
+                    # [Diffusion Policy] Override original camera obs with preprocessed one.
+                    if cfg.model_family == "diffusion_policy":
+                        obs["image"][cfg.camera_serial_num] = obs["full_image"]
 
                     # Query model to get action.
                     action = get_action(cfg, model, obs, task_label, policy_fn, octo_nowrap=True)
