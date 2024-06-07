@@ -60,6 +60,8 @@ class TrainConfig:
 
     # Resume Run Parameters
     pretrained_checkpoint: Optional[Path] = None                    # Absolute Path to Checkpoint
+    is_resume: bool = True                                          # Whether we are continuing a prior training run
+                                                                    #   (only applicable given pretrained checkpoint)
     resume_step: Optional[int] = None                               # Global Step to Resume (should match checkpoint)
     resume_epoch: Optional[int] = None                              # Epoch to Resume (should match checkpoint)
 
@@ -141,8 +143,9 @@ def train(cfg: TrainConfig) -> None:
     if cfg.pretrained_checkpoint is not None:
         # [Validate] Pretrained Checkpoint `step` and `epoch` should match `resume_step` and `resume_epoch`
         #   =>> Note :: We make developers pass in `resume_*` arguments as an extra sanity check!
-        assert int(re.search("step-(.+?)-", cfg.pretrained_checkpoint.name).group(1)) == cfg.resume_step
-        assert int(re.search("epoch-(.+?)-", cfg.pretrained_checkpoint.name).group(1)) == cfg.resume_epoch
+        if cfg.is_resume:
+            assert int(re.search("step-(.+?)-", cfg.pretrained_checkpoint.name).group(1)) == cfg.resume_step
+            assert int(re.search("epoch-(.+?)-", cfg.pretrained_checkpoint.name).group(1)) == cfg.resume_epoch
 
         vlm = load_vla(cfg.pretrained_checkpoint, hf_token=hf_token, load_for_training=True)
 
@@ -155,15 +158,15 @@ def train(cfg: TrainConfig) -> None:
 
     # Determine training "stage" based on frozen vs unfrozen parameters
     if not cfg.vla.freeze_vision_backbone and not cfg.vla.freeze_llm_backbone:
-        stage = "vla-full-train"
+        stage = "vla-full-train"  # Full fine-tuning
     elif cfg.vla.freeze_vision_backbone and not cfg.vla.freeze_llm_backbone:
-        stage = "vla-train"
+        stage = "vla-train"  # Frozen vision encoder
     elif not cfg.vla.freeze_vision_backbone and cfg.vla.freeze_llm_backbone:
         assert cfg.vla.unfreeze_last_llm_layer, "You should unfreeze at least the last layer of your LLM!"
-        stage = "vla-sandwich-train"
+        stage = "vla-sandwich-train"  # Fine-tuning vision encoder, projector, and LLM last layer
     elif cfg.vla.freeze_vision_backbone and cfg.vla.freeze_llm_backbone:
         assert cfg.vla.unfreeze_last_llm_layer, "Need to unfreeze at least last LLM layer to train!"
-        stage = "vla-last-layer-train"
+        stage = "vla-last-layer-train"  # Fine-tuning LLM last layer only
     else:
         raise ValueError(
             "Weight freezing configuration not supported. VLA config has the following parameters: "
@@ -175,6 +178,13 @@ def train(cfg: TrainConfig) -> None:
     # [Explicit] Call to `freeze_backbones` here for clarity =>> will log exactly what is/is not frozen
     overwatch.info(f"Invoking `VLM.freeze_backbones()` for `{vla_id}` => Stage: `{stage}`")
     vlm.freeze_backbones(stage)
+
+    # Print number of total/trainable model parameters
+    num_params = sum(p.numel() for p in vlm.parameters())
+    num_trainable_params = sum(p.numel() for p in vlm.parameters() if p.requires_grad)
+    overwatch.info(
+        f"# parameters (in millions): {num_params / 10**6:.3f} total, {num_trainable_params / 10**6:.3f} trainable"
+    )
 
     # Get VLA Dataset & Collator
     overwatch.info(f"Creating VLA Open-X Dataset with Mixture `{cfg.vla.data_mix}`")

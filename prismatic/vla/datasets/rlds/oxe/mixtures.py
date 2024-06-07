@@ -261,5 +261,17 @@ OXE_NAMED_MIXTURES: Dict[str, List[Tuple[str, float]]] = {
     "tdroid_pour_corn_in_pot": [
         ("tdroid_pour_corn_in_pot", 1.0),
     ],
+    "tdroid_flip_pot_upright": [
+        ("tdroid_flip_pot_upright", 1.0),
+    ],
+    "tdroid_move_object_onto_plate": [
+        ("tdroid_move_object_onto_plate", 1.0),
+    ],
+    "tdroid_knock_object_over": [
+        ("tdroid_knock_object_over", 1.0),
+    ],
+    "tdroid_cover_object_with_towel": [
+        ("tdroid_cover_object_with_towel", 1.0),
+    ],
 }
 # fmt: on

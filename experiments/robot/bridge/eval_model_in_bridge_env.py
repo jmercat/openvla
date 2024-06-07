@@ -11,7 +11,8 @@ Usage:
 
     # Octo:
     python experiments/robot/bridge/eval_model_in_bridge_env.py --model_family octo \
-         --blocking True --control_frequency 2.5
+        --blocking True --control_frequency 5 \
+        --pretrained_checkpoint <CHECKPOINT_PATH>
 
     # RT-1-X:
     python experiments/robot/bridge/eval_model_in_bridge_env.py --model_family rt_1_x \
@@ -92,7 +93,7 @@ class GenerateConfig:
     hf_token: Union[str, Path] = Path(".hf_token")              # Environment variable or Path to HF Token
 
     # Randomness
-    seed: int = 21                                              # Random Seed (for reproducibility)
+    seed: int = 7                                               # Random Seed (for reproducibility)
     # fmt: on
 
 

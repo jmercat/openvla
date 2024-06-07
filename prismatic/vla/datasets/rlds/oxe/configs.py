@@ -636,14 +636,42 @@ OXE_DATASET_CONFIGS = {
         "action_encoding": ActionEncoding.EEF_POS,
     },
     ### T-DROID datasets
-    "tdroid_carrot_in_bowl": {
+    "tdroid_carrot_in_bowl": {  # "put carrot in bowl" task, 50 demos @ 5 Hz control
         "image_obs_keys": {"primary": "static_image", "secondary": None, "wrist": None},
         "depth_obs_keys": {"primary": "static_depth_image", "secondary": None, "wrist": None},
         "state_obs_keys": ["EEF_state", None, "gripper_state"],
         "state_encoding": StateEncoding.POS_EULER,
         "action_encoding": ActionEncoding.EEF_POS,
     },
-    "tdroid_pour_corn_in_pot": {
+    "tdroid_pour_corn_in_pot": {  # "pour corn from red bowl into steel pot" task, 50 demos @ 5 Hz control
+        "image_obs_keys": {"primary": "static_image", "secondary": None, "wrist": None},
+        "depth_obs_keys": {"primary": "static_depth_image", "secondary": None, "wrist": None},
+        "state_obs_keys": ["EEF_state", None, "gripper_state"],
+        "state_encoding": StateEncoding.POS_EULER,
+        "action_encoding": ActionEncoding.EEF_POS,
+    },
+    "tdroid_flip_pot_upright": {  # "flip pot upright" task, 10 demos @ 5 Hz control
+        "image_obs_keys": {"primary": "static_image", "secondary": None, "wrist": None},
+        "depth_obs_keys": {"primary": "static_depth_image", "secondary": None, "wrist": None},
+        "state_obs_keys": ["EEF_state", None, "gripper_state"],
+        "state_encoding": StateEncoding.POS_EULER,
+        "action_encoding": ActionEncoding.EEF_POS,
+    },
+    "tdroid_move_object_onto_plate": {  # "move <object> onto plate" task, 150 demos @ 5 Hz control
+        "image_obs_keys": {"primary": "static_image", "secondary": None, "wrist": None},
+        "depth_obs_keys": {"primary": "static_depth_image", "secondary": None, "wrist": None},
+        "state_obs_keys": ["EEF_state", None, "gripper_state"],
+        "state_encoding": StateEncoding.POS_EULER,
+        "action_encoding": ActionEncoding.EEF_POS,
+    },
+    "tdroid_knock_object_over": {  # "knock <object> over" task, 70 demos @ 5 Hz control
+        "image_obs_keys": {"primary": "static_image", "secondary": None, "wrist": None},
+        "depth_obs_keys": {"primary": "static_depth_image", "secondary": None, "wrist": None},
+        "state_obs_keys": ["EEF_state", None, "gripper_state"],
+        "state_encoding": StateEncoding.POS_EULER,
+        "action_encoding": ActionEncoding.EEF_POS,
+    },
+    "tdroid_cover_object_with_towel": {  # "cover <object> with towel" task, 45 demos @ 5 Hz control
         "image_obs_keys": {"primary": "static_image", "secondary": None, "wrist": None},
         "depth_obs_keys": {"primary": "static_depth_image", "secondary": None, "wrist": None},
         "state_obs_keys": ["EEF_state", None, "gripper_state"],
