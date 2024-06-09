@@ -1,10 +1,22 @@
 """
-lora_finetune.py
+finetune.py
 
-Simple script for parameter-efficient finetuning of OpenVLA.
+Simple script for parameter-efficient fine-tuning of OpenVLA.
+
+With LoRA fine-tuning:
+- a single 48GB GPU can fit batch size up to 12
+- a single 80GB GPU can fit batch size up to 24
+
 Usage:
-    - [One-GPU] : torchrun --nproc-per-node 1 vla-scripts/finetune.py
-    - [Multi-GPU (= $K)]: torchrun --nproc-per-node $K vla-scripts/finetune.py
+    To launch training with the default config, simply run:
+        torchrun --nproc-per-node <NUM_GPUS> vla-scripts/finetune.py
+
+    You also can overwrite default config values on the command line, like so:
+        torchrun --nproc-per-node <NUM_GPUS> vla-scripts/finetune.py \
+            --data_root_dir /PATH/TO/RLDS/DATASETS/DIR \
+            --dataset_name <DATASET_NAME> \
+            --run_root_dir /PATH/TO/LOGS/DIR \
+            ...
 """
 
 import os
@@ -39,6 +51,7 @@ DATE_TIME = time.strftime("%Y_%m_%d-%H_%M_%S")
 
 
 def create_vision_transform(vla, input_size):
+    """Gets image transform for the vision encoder."""
     data_cfg = timm.data.resolve_model_data_config(vla.vision_backbone)
     data_cfg["input_size"] = (3, input_size, input_size)
     return timm.data.create_transform(
@@ -46,9 +59,9 @@ def create_vision_transform(vla, input_size):
         interpolation=data_cfg["interpolation"],
         mean=data_cfg["mean"],
         std=data_cfg["std"],
-        crop_pct=1.0,  # Set to 1.0 to ignore cropping (initial Resize sets `input_size`)
-        crop_mode="center",  # Default crop mode -- no-op when `crop_pct == 1.0`
-        is_training=False,  # No image augmentations when loading the transform!
+        crop_pct=1.0,  # Set to 1.0 to disable cropping
+        crop_mode="center",  # Default crop mode --> no-op when `crop_pct == 1.0`
+        is_training=False,  # Disable image aug when loading transform; image aug is handled by RLDS dataloader
     )
 
 
@@ -62,22 +75,24 @@ class FinetuneConfig:
     data_root_dir: Path = Path(                                     # Path to Open-X dataset directory
         "/raid/datasets"
     )
-    dataset_name: str = "droid_wipe"                                # Name of dataset to finetune on
+    dataset_name: str = "droid_wipe"                                # Name of dataset to fine-tune on
     run_root_dir: Path = Path("/raid/users/karl/models")            # Path to directory to store logs & checkpoints
     temp_root_dir: Path = Path("/tmp")                              # Temp dir for storing LoRA adapter before fusing
 
-    # Finetune arguments
-    batch_size: int = 64                                            # Finetuning batch size
-    max_steps: int = 30_000                                         # Max number of finetuning steps
-    save_steps: int = 1000                                          # Interval for checkpoint saving
-    learning_rate: float = 2e-5                                     # Finetuning learning rate
+    # Fine-tuning arguments
+    batch_size: int = 16                                            # Fine-tuning batch size
+    max_steps: int = 200_000                                        # Max number of fine-tuning steps
+    save_steps: int = 5000                                          # Interval for checkpoint saving
+    learning_rate: float = 2e-5                                     # Fine-tuning learning rate
     grad_accumulation_steps: int = 1                                # Steps of gradient accumulation
+    image_aug: bool = True                                          # Whether to train with image augmentations
+    shuffle_buffer_size: int = 100_000                              # Dataloader shuffle buffer size (can reduce if OOM)
 
     # LoRA arguments
-    use_lora: bool = True                                           # Whether to use LoRA finetuning
+    use_lora: bool = True                                           # Whether to use LoRA fine-tuning
     lora_rank: int = 32                                             # Rank of LoRA weight matrix
     lora_dropout: float = 0.0                                       # Dropout applied to LoRA weights
-    use_quantization: bool = False                                  # Whether to load model quantized for LoRA finetuning
+    use_quantization: bool = False                                  # Whether to load model quantized for LoRA fine-tuning
                                                                     # CAUTION: reduces memory, but hurts performance
 
     # HF Hub Credentials (for any gated models)
@@ -90,7 +105,7 @@ class FinetuneConfig:
 
 @draccus.wrap()
 def finetune(cfg: FinetuneConfig) -> None:
-    # Initialize
+    # Set up experiment ID and log directory
     distributed_state = PartialState()
     exp_id = (
         f"{cfg.vla_path.split('/')[-1]}_{cfg.dataset_name}"
@@ -111,7 +126,7 @@ def finetune(cfg: FinetuneConfig) -> None:
     processor = AutoProcessor.from_pretrained(cfg.vla_path, trust_remote_code=True)
 
     if cfg.use_quantization:
-        assert cfg.use_lora, "Quantized training only supported for LoRA finetuning."
+        assert cfg.use_lora, "Quantized training only supported for LoRA fine-tuning."
         quantization_config = BitsAndBytesConfig(
             load_in_4bit=True, bnb_4bit_compute_dtype=torch.bfloat16, bnb_4bit_quant_type="nf4"
         )
@@ -131,7 +146,7 @@ def finetune(cfg: FinetuneConfig) -> None:
         # BnB handles device placement automatically for quantized training
         vla = vla.to(device)
 
-    # Wrap model in PEFT for LoRA finetuning
+    # Wrap model in PEFT for LoRA fine-tuning
     if cfg.use_lora:
         lora_config = LoraConfig(
             r=cfg.lora_rank,
@@ -159,10 +174,12 @@ def finetune(cfg: FinetuneConfig) -> None:
     # Create action tokenizer
     action_tokenizer = ActionTokenizer(processor.tokenizer)
 
-    # Load training data --> we use OpenX-style RLDS dataset by default
-    # For a simple custom PyTorch Dataset example, without RLDS, see below
-    # Note: RLDS datasets loop infinitely, if your PyTorch dataset does not, you need to add an
-    #       epoch loop around the `for batch in dataloader:` loop below!
+    # Load training data
+    # We use Open X-Embodiment RLDS dataset by default
+    # If you instead wish to use a simple custom PyTorch Dataset, without RLDS, see below
+    # Note: Our training code does not include an outer for loop iterating through multiple epochs because
+    #       RLDS datasets loop infinitely and progress to the next epoch automatically. If you opt to use a
+    #       PyTorch Dataset instead of RLDS, you should add an epoch loop below.
 
     ################################ Example PyTorch Dataset ################################
     # from prismatic.vla.datasets import DummyDataset
@@ -185,12 +202,13 @@ def finetune(cfg: FinetuneConfig) -> None:
         cfg.dataset_name,
         batch_transform,
         resize_resolution=(vla.module.config.image_size, vla.module.config.image_size),
-        shuffle_buffer_size=100_000,
-        image_aug=True,  # we add image augmentation during finetuning by default
+        shuffle_buffer_size=cfg.shuffle_buffer_size,
+        image_aug=cfg.image_aug,
     )
 
     # Save dataset statistics for inference action de-normalization
-    save_dataset_statistics(vla_dataset.dataset_statistics, run_dir)
+    if distributed_state.is_main_process:
+        save_dataset_statistics(vla_dataset.dataset_statistics, run_dir)
 
     # Create collator and training data loader
     collator = PaddedCollatorForActionPrediction(
@@ -212,6 +230,7 @@ def finetune(cfg: FinetuneConfig) -> None:
             name=f"FT-{exp_id}-{DATE_TIME}",
         )
 
+    # Begin training
     with tqdm.tqdm(
         total=cfg.max_steps,
         leave=False,
@@ -219,6 +238,7 @@ def finetune(cfg: FinetuneConfig) -> None:
         vla.train()
         optimizer.zero_grad()
         for step, batch in enumerate(dataloader):
+            # Compute forward pass in half precision and get train loss
             with torch.autocast("cuda", dtype=torch.bfloat16):
                 output: CausalLMOutputWithPast = vla(
                     input_ids=batch["input_ids"].to(device),
@@ -247,6 +267,7 @@ def finetune(cfg: FinetuneConfig) -> None:
             )
             action_l1_loss = torch.nn.functional.l1_loss(continuous_actions_pred, continuous_actions_gt)
 
+            # Log metrics on wandb
             if distributed_state.is_main_process and step % 10 == 0:
                 wandb.log(
                     {
@@ -262,6 +283,8 @@ def finetune(cfg: FinetuneConfig) -> None:
                 optimizer.step()
                 progress.update()
 
+            # Save model checkpoint
+            # By default, keeps only the latest checkpoint and continually overrides it
             if step > 0 and step % cfg.save_steps == 0:
                 if distributed_state.is_main_process:
                     print(f"Saving model checkpoint, step {step}...")
