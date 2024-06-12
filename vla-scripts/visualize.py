@@ -30,10 +30,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import tqdm
+import wandb
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from torch.utils.data import DataLoader
 
-import wandb
 from prismatic.conf import VLAConfig, VLARegistry
 from prismatic.models import load_vla
 from prismatic.models.vlms import OpenVLA, PrismaticVLM
