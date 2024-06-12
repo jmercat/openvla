@@ -35,9 +35,9 @@ from typing import Union
 import draccus
 import numpy as np
 import tqdm
+import wandb
 from libero.libero import benchmark
 
-import wandb
 from prismatic.conf import ModelConfig, ModelRegistry
 
 # TODO (moojink) Hack so that the interpreter can find experiments.robot
@@ -76,11 +76,12 @@ class GenerateConfig:
         "checkpoints/step-152500-epoch-27-loss=0.1637.pt"
     )
 
-    unnorm_key: str = "libero_spatial"                          # Dataset name for action unnormalization (will be overridden by `task_suite_name`)
+    unnorm_key: str = "libero_spatial"                          # Dataset name for action unnormalization
+                                                                #   (will be overridden by `task_suite_name`)
     center_crop: bool = False                                   # Center crop? (if trained w/ random crop image aug)
 
     # Diffusion Policy args
-    dp_action_horizon: int = None                              # Action chunk size (None means use value found in config)
+    dp_action_horizon: int = None                              # Action chunk size (None means use value in config)
     action_space: str = "cartesian_velocity"
 
     # Task suite (options: libero_spatial, libero_object, libero_goal, libero_90, libero_10, libero_100)
