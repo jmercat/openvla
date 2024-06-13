@@ -278,10 +278,13 @@ def save_dataset_statistics(dataset_statistics, run_dir):
         for _, stats in dataset_statistics.items():
             for k in stats["action"].keys():
                 stats["action"][k] = stats["action"][k].tolist()
-            for k in stats["proprio"].keys():
-                stats["proprio"][k] = stats["proprio"][k].tolist()
-            stats["num_trajectories"] = stats["num_trajectories"].item()
-            stats["num_transitions"] = stats["num_transitions"].item()
+            if "proprio" in stats:
+                for k in stats["proprio"].keys():
+                    stats["proprio"][k] = stats["proprio"][k].tolist()
+            if "num_trajectories" in stats:
+                stats["num_trajectories"] = stats["num_trajectories"].item()
+            if "num_transitions" in stats:
+                stats["num_transitions"] = stats["num_transitions"].item()
         json.dump(dataset_statistics, f_json, indent=2)
     overwatch.info(f"Saved dataset statistics file at path {out_path}")
 

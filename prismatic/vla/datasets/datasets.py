@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Tuple, Type
 
+import numpy as np
 import torch
 from PIL import Image
 from torch.utils.data import IterableDataset
@@ -99,10 +100,10 @@ class RLDSDataset(IterableDataset):
         )
         rlds_config = dict(
             traj_transform_kwargs=dict(
-                window_size=1,                                  # If we wanted to feed / predict more than one step
-                future_action_window_size=0,                    # For action chunking
-                skip_unlabeled=True,                            # Skip trajectories without language labels
-                goal_relabeling_strategy="uniform",             # Goals are currently unused
+                window_size=1,                                      # If we wanted to feed / predict more than one step
+                future_action_window_size=0,                        # For action chunking
+                skip_unlabeled=True,                                # Skip trajectories without language labels
+                goal_relabeling_strategy="uniform",                 # Goals are currently unused
             ),
             frame_transform_kwargs=dict(
                 resize_size=resize_resolution,
@@ -176,3 +177,63 @@ class EpisodicRLDSDataset(RLDSDataset):
                 for i in range(rlds_batch["action"].shape[0])
             ]
             yield out
+
+
+class DummyDataset(torch.utils.data.Dataset):
+
+    def __init__(
+        self,
+        action_tokenizer: ActionTokenizer,
+        base_tokenizer: PreTrainedTokenizerBase,
+        image_transform: ImageTransform,
+        prompt_builder_fn: Type[PromptBuilder],
+    ):
+        self.action_tokenizer = action_tokenizer
+        self.base_tokenizer = base_tokenizer
+        self.image_transform = image_transform
+        self.prompt_builder_fn = prompt_builder_fn
+
+        # We expect the dataset to store statistics for action un-normalization
+        # Specifically, we store the per-dimension first and 99th action quantile
+        # The values below correspond to "no normalization"
+        self.dataset_statistics = {
+            "dummy_dataset": {
+                "action": {
+                    "q01": np.zeros((7,), dtype=np.float32),
+                    "q99": np.ones((7,), dtype=np.float32),
+                }
+            }
+        }
+
+    def __len__(self):
+        # [TODO]: Replace with number of elements in your dataset
+        return 10000
+
+    def __getitem__(self, idx):
+        # [TODO]: Load image, action and instruction from disk -- we use dummy values
+        image = Image.fromarray(np.asarray(np.random.rand(224, 224, 3) * 255.0, dtype=np.uint8))
+        action = np.asarray(np.random.rand(7), dtype=np.float32)
+        instruction = "do something"
+
+        # Add instruction into VLA prompt
+        prompt_builder = self.prompt_builder_fn("openvla")
+        conversation = [
+            {"from": "human", "value": f"What action should the robot take to {instruction}?"},
+            {"from": "gpt", "value": self.action_tokenizer(action)},
+        ]
+        for turn in conversation:
+            prompt_builder.add_turn(turn["from"], turn["value"])
+
+        # Tokenize (w/ `base_tokenizer`)
+        input_ids = self.base_tokenizer(prompt_builder.get_prompt(), add_special_tokens=True).input_ids
+        labels = list(input_ids)
+
+        # Tensorize =>> Run Image Transform to get `pixel_values` =>> Return
+        #   =>> IMPORTANT :: IF WE'RE USING HF LLM.forward(..., labels=labels), SHIFTING HAPPENS _INSIDE_ MODEL!
+        input_ids, labels = torch.tensor(input_ids), torch.tensor(labels)
+        pixel_values = self.image_transform(image)
+
+        # [CRITICAL] We do not want to take the loss for anything but the predicted action tokens!
+        labels[: -(len(action) + 1)] = IGNORE_INDEX
+
+        return dict(pixel_values=pixel_values, input_ids=input_ids, labels=labels)

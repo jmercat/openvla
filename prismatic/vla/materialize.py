@@ -38,7 +38,7 @@ def get_vla_dataset_and_collator(
         action_tokenizer, tokenizer, image_transform, prompt_builder_fn, predict_stop_token=predict_stop_token
     )
     collator = PaddedCollatorForActionPrediction(
-        tokenizer.model_max_length, tokenizer.pad_token_id, default_image_resolution, padding_side=padding_side
+        tokenizer.model_max_length, tokenizer.pad_token_id, padding_side=padding_side
     )
 
     # Build RLDS Iterable Dataset & Return
