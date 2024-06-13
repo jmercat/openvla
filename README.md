@@ -89,10 +89,13 @@ conda activate prisma
 ```
 
 This repository was built using Python 3.10, but should be backwards compatible with any Python >= 3.8. We require
-PyTorch 2.1 or greater installation instructions [can be found here](https://pytorch.org/get-started/locally/). This
-repository was developed and has been thoroughly tested with:
-  - [2/16/24] PyTorch 2.1.0, Torchvision 0.16.0, Transformers 4.34.1, and Flash-Attention 2.3.3.
-  - [2/24/24] PyTorch 2.2.1, Torchvision 0.17.0, Transformers 4.38.1, and Flash-Attention 2.5.5.
+PyTorch 2.2.* -- installation instructions [can be found here](https://pytorch.org/get-started/locally/). The latest 
+version of this repository (`v0.0.3`) was developed and thoroughly tested with:
+  - PyTorch 2.2.0, torchvision 0.17.0, transformers 4.40.1, tokenizers 0.19.1, timm 0.9.10, and flash-attn 2.5.5
+
+**[5/21/24] Note**: Following reported regressions and breaking changes in later versions of `transformers`, `timm`, and
+`tokenizers` we explicitly pin the above versions of the dependencies. We are working on implementing thorough tests, 
+and plan on relaxing these constraints as soon as we can.
 
 Once PyTorch has been properly installed (e.g., via
 `conda install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia`), you can install this
@@ -111,7 +114,7 @@ ninja --version; echo $?
 
 # Install Flash Attention 2
 #   =>> If you run into difficulty, try `pip cache remove flash_attn` first
-pip install flash-attn --no-build-isolation
+pip install "flash-attn==2.5.5" --no-build-isolation
 ```
 
 If you run into any problems during the installation process, please file a GitHub Issue.

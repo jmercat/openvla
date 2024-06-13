@@ -128,15 +128,9 @@ def launch(cfg: LaunchConfig) -> None:
         distribution={"torch_distributed": {"enabled": True}},
         disable_profiler=True,
         tags=[
-            {
-                "Key": "tri.project",
-                "Value": "LBM:PJ-0109"
-            },
-            {
-                "Key": "tri.owner.email",
-                "Value": "siddharth.karamcheti@tri.global"
-            },
-        ]
+            {"Key": "tri.project", "Value": "LBM:PJ-0109"},
+            {"Key": "tri.owner.email", "Value": "siddharth.karamcheti@tri.global"},
+        ],
     )
     estimator.fit(inputs={"training": train_fs if not cfg.debug else "file:///mnt/fsx/"})
 

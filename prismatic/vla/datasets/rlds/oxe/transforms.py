@@ -908,6 +908,10 @@ OXE_STANDARDIZATION_TRANSFORMS = {
     ### T-DROID datasets
     "tdroid_carrot_in_bowl": tdroid_dataset_transform,
     "tdroid_pour_corn_in_pot": tdroid_dataset_transform,
+    "tdroid_flip_pot_upright": tdroid_dataset_transform,
+    "tdroid_move_object_onto_plate": tdroid_dataset_transform,
+    "tdroid_knock_object_over": tdroid_dataset_transform,
+    "tdroid_cover_object_with_towel": tdroid_dataset_transform,
     ### DROID Finetuning datasets
     "droid_wipe": droid_finetuning_transform,
 }
