@@ -147,3 +147,6 @@ dmypy.json
 # Caches and Datasets
 cache/
 data/
+llm_checkpoints/
+vlm_checkpoints/
+runs/

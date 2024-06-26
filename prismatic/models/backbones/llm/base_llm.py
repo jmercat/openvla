@@ -42,6 +42,7 @@ class LLMBackbone(nn.Module, ABC):
         # Instance attributes for an LLM Backbone
         self.llm: PreTrainedModel = None
         self.tokenizer: PreTrainedTokenizerBase = None
+        self.bos_exists: bool = True
 
     def get_tokenizer(self) -> PreTrainedTokenizerBase:
         return self.tokenizer
@@ -152,6 +153,10 @@ class HFCausalLLMBackbone(LLMBackbone, ABC):
         self.tokenizer = AutoTokenizer.from_pretrained(
             hf_hub_path, model_max_length=self.llm_max_length, token=hf_token, padding_side="right"
         )
+
+        self.bos_exists = (
+            self.tokenizer("Testing 123", add_special_tokens=True).input_ids[0] == self.tokenizer.bos_token_id
+        ) and (self.tokenizer("Testing 123", add_special_tokens=False).input_ids[0] != self.tokenizer.bos_token_id)
 
         # Validation =>> Our VLM logic currently operates under the assumption that the tokenization of a new input
         #                starts with a <BOS> token unless `add_special_tokens = False`; for these models, we empirically

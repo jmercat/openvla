@@ -33,6 +33,7 @@ import yaml
 
 from prismatic.conf import DatasetConfig, DatasetRegistry, ModelConfig, ModelRegistry
 from prismatic.models import get_llm_backbone_and_tokenizer, get_vision_backbone_and_transform, get_vlm
+from prismatic.models.backbones.llm.openlm import get_vision_state_dict
 from prismatic.overwatch import initialize_overwatch
 from prismatic.preprocessing import get_dataset_and_collator
 from prismatic.training import Metrics, get_train_strategy
@@ -66,17 +67,17 @@ class PretrainConfig:
                                                                     #   if None =>> will match on (run_dir / `align`)
 
     # Run Arguments
-    run_id: Optional[str] = None                                    # Run ID for logging, Weights & Biases
-    run_root_dir: Path = Path("/mnt/fsx/x-prismatic-vlms/runs")     # Path to directory to store logs & checkpoints
-    seed: int = 7                                                   # Random seed (for reproducibility)
+    run_id: Optional[str] = None                                      # Run ID for logging, Weights & Biases
+    run_root_dir: Path = Path("runs")                                 # Path to directory to store logs & checkpoints
+    seed: int = 7                                                     # Random seed (for reproducibility)
 
     # HF Hub Credentials (for any gated models)
-    hf_token: Union[str, Path] = Path(".hf_token")                  # Environment variable or Path to HF Token
+    hf_token: Union[str, Path] = "HF_TOKEN"                           # Environment variable or Path to HF Token
 
     # Tracking Parameters
-    trackers: Tuple[str, ...] = ("jsonl", "wandb")                  # Trackers to initialize (if W&B, add config!)
-    wandb_project: str = "onyx-vlms"                                # Name of W&B project (default: `prismatic`)
-    wandb_entity: Optional[str] = "stanford-voltron"                # Name of W&B entity (default: None)
+    trackers: Tuple[str, ...] = ("jsonl", "wandb")                    # Trackers to initialize (if W&B, add config!)
+    wandb_project: str = "OpenVLA"                                # Name of W&B project (default: `prismatic`)
+    wandb_entity: Optional[str] = None                              # Name of W&B entity (default: None)
 
     def __post_init__(self) -> None:
         """Set optimization parameters based on `stage` in {"align", "finetune"}."""
@@ -88,6 +89,7 @@ class PretrainConfig:
 
             self.learning_rate = self.model.align_learning_rate
             self.weight_decay = self.model.align_weight_decay
+            self.beta1, self.beta2 = self.model.align_beta1, self.model.align_beta2
             self.max_grad_norm = self.model.align_max_grad_norm
             self.lr_scheduler_type = self.model.align_lr_scheduler_type
             self.warmup_ratio = self.model.align_warmup_ratio
@@ -102,6 +104,7 @@ class PretrainConfig:
 
             self.learning_rate = self.model.finetune_learning_rate
             self.weight_decay = self.model.finetune_weight_decay
+            self.beta1, self.beta2 = self.model.finetune_beta1, self.model.finetune_beta2
             self.max_grad_norm = self.model.finetune_max_grad_norm
             self.lr_scheduler_type = self.model.finetune_lr_scheduler_type
             self.warmup_ratio = self.model.finetune_warmup_ratio
@@ -116,7 +119,7 @@ class PretrainConfig:
 
 @draccus.wrap()
 def pretrain(cfg: PretrainConfig) -> None:
-    overwatch.info("Prismatic VLM Training :: Gathering Light")
+    overwatch.info("Prismatic VLM Training")
 
     # Note => Under `torchrun` initializing `overwatch` will automatically set up `torch.distributed`
     torch.cuda.set_device(device_id := overwatch.local_rank())
@@ -130,7 +133,6 @@ def pretrain(cfg: PretrainConfig) -> None:
         cfg.run_id = f"{dataset_id}+{model_id}+stage-{cfg.stage}+x{cfg.seed}" if cfg.run_id is None else cfg.run_id
 
     # Start =>> Build Directories and Set Randomness
-    overwatch.info('"Life is like a prism; what you see depends on how you turn the glass."', ctx_level=1)
     hf_token = cfg.hf_token.read_text().strip() if isinstance(cfg.hf_token, Path) else os.environ[cfg.hf_token]
     worker_init_fn = set_global_seed(cfg.seed, get_worker_init_fn=True)
     os.makedirs(run_dir := (cfg.run_root_dir / cfg.run_id), exist_ok=True)
@@ -143,13 +145,25 @@ def pretrain(cfg: PretrainConfig) -> None:
             json.dump(yaml_cfg, f_json, indent=2)
 
     # Load Vision Backbone --> on CPU, in Full Precision (initializing model, image_transform via TIMM)
-    overwatch.info(f"Loading Vision Backbone [bold]{cfg.model.vision_backbone_id}[/] via TIMM ")
+    not_openvlm = not cfg.model.llm_backbone_id.startswith("(openvlm)")
+    if not_openvlm:
+        overwatch.info(f"Loading Vision Backbone [bold]{cfg.model.vision_backbone_id}[/] via TIMM ")
     vision_backbone, image_transform = get_vision_backbone_and_transform(
-        cfg.model.vision_backbone_id, image_resize_strategy=cfg.model.image_resize_strategy
+        cfg.model.vision_backbone_id, image_resize_strategy=cfg.model.image_resize_strategy, dino_first=not_openvlm, pretrained=not_openvlm
     )
 
+    load_from = cfg.pretrained_checkpoint
+    if cfg.model.llm_backbone_id.startswith("(openvlm)"):
+        overwatch.info(f"Loading Vision Backbone [bold]{cfg.model.vision_backbone_id}[/] from OpenVLM Checkpoint")
+        # Special Handling for OpenVLM Backbones because it contains vision + language components
+        vision_state_dict = get_vision_state_dict(cfg.model.llm_backbone_id)
+        vision_backbone.load_state_dict(vision_state_dict, strict=True)
+        if cfg.pretrained_checkpoint is None:
+            load_from = cfg.model.llm_backbone_id
+
+
     # Load LLM Backbone --> on CPU, in Full Precision (initializing Tokenizer + handling special tokens if necessary)
-    overwatch.info(f"Loading Pretrained LLM [bold]{cfg.model.llm_backbone_id}[/] via HF Transformers")
+    overwatch.info(f"Loading Pretrained LLM [bold]{cfg.model.llm_backbone_id}[/]")
     llm_backbone, tokenizer = get_llm_backbone_and_tokenizer(
         cfg.model.llm_backbone_id, llm_max_length=cfg.model.llm_max_length, hf_token=hf_token
     )
@@ -170,7 +184,7 @@ def pretrain(cfg: PretrainConfig) -> None:
 
     # Load Weights from Checkpoint (depends on stage, config)
     overwatch.info(f"Invoking `VLM.load_checkpoint()` for `{model_id}` => Training Stage: `{cfg.stage}`")
-    vlm.load_from_checkpoint(cfg.stage, run_dir, pretrained_checkpoint=cfg.pretrained_checkpoint)
+    vlm.load_from_checkpoint(cfg.stage, run_dir, pretrained_checkpoint=load_from)
 
     # Get Dataset for Specified Stage
     overwatch.info(f"Creating Dataset `{cfg.dataset.dataset_id}` => Stage: `{cfg.stage}`")
@@ -197,6 +211,8 @@ def pretrain(cfg: PretrainConfig) -> None:
         per_device_batch_size=cfg.per_device_batch_size,
         learning_rate=cfg.learning_rate,
         weight_decay=cfg.weight_decay,
+        beta1=cfg.beta1,
+        beta2=cfg.beta2,
         max_grad_norm=cfg.max_grad_norm,
         lr_scheduler_type=cfg.lr_scheduler_type,
         warmup_ratio=cfg.warmup_ratio,
@@ -229,7 +245,7 @@ def pretrain(cfg: PretrainConfig) -> None:
     metrics.finalize()
 
     # And... we're done!
-    overwatch.info("... and that's all, folks!")
+    overwatch.info("Training Complete")
     dist.barrier()
     dist.destroy_process_group()
 

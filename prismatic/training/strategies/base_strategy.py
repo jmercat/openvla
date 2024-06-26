@@ -12,6 +12,8 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Callable, Optional
 
+import numpy as np
+
 import torch
 import torch.distributed as dist
 from torch.utils.data import DataLoader, Dataset, DistributedSampler, IterableDataset
@@ -25,6 +27,7 @@ from prismatic.util import check_bloat16_supported
 from prismatic.util.batching_utils import SplitModalitySampler
 from prismatic.util.data_utils import PaddedCollatorForActionPrediction, PaddedCollatorForLanguageModeling
 from prismatic.vla.action_tokenizer import ActionTokenizer
+from prismatic.util.torch_utils import get_autocast
 
 # Initialize Overwatch =>> Wraps `logging.Logger`
 overwatch = initialize_overwatch(__name__)
@@ -43,6 +46,8 @@ class TrainingStrategy(ABC):
         per_device_batch_size: int,
         learning_rate: float,
         weight_decay: float,
+        beta1: float,
+        beta2: float,
         max_grad_norm: float,
         lr_scheduler_type: str,
         warmup_ratio: float,
@@ -64,6 +69,7 @@ class TrainingStrategy(ABC):
         self.global_batch_size, self.per_device_batch_size = global_batch_size, per_device_batch_size
 
         self.learning_rate, self.weight_decay, self.max_grad_norm = learning_rate, weight_decay, max_grad_norm
+        self.beta1, self.beta2 = beta1, beta2
         self.lr_scheduler_type, self.warmup_ratio = lr_scheduler_type, warmup_ratio
 
         # Generic Strategy Parameters
@@ -137,13 +143,15 @@ class TrainingStrategy(ABC):
                 drop_last=False,
             )
 
+        autocast = get_autocast()
+
         # Create a DataLoader with the initialized sampler, per-device-bsz, and collator
         dataloader = DataLoader(
             dataset,
             batch_size=self.per_device_batch_size,
             sampler=sampler,
             collate_fn=collator,
-            num_workers=2,
+            num_workers=4,
             worker_init_fn=self.worker_init_fn,
         )
 
@@ -176,8 +184,7 @@ class TrainingStrategy(ABC):
                 #   => Basically, if we're using mixed precision (or not), autocast()/FSDP will move to device!
                 for train_idx, batch in enumerate(dataloader):
                     # [Contract] self.vlm.forward() must automatically compute `loss` and return!
-                    with torch.autocast(
-                        "cuda",
+                    with autocast(
                         dtype=self.mixed_precision_dtype,
                         enabled=self.enable_mixed_precision_training,
                     ):
@@ -191,7 +198,7 @@ class TrainingStrategy(ABC):
                         loss = output.loss
 
                     # Commit Loss (Prior to Gradient Accumulation Normalization)
-                    metrics.commit(loss=loss)
+                    metrics.commit(loss=loss, text_tokens=batch["attention_mask"].sum().item(), padded_tokens=np.prod(output.logits.shape[:-1]))
 
                     # Normalize Loss to account for Gradient Accumulation --> Backward!
                     # [IMPORTANT] Technically speaking, doing gradient accumulation in this way is "incorrect"; this is
@@ -226,6 +233,7 @@ class TrainingStrategy(ABC):
 
                         # Check for Termination & Save Final Checkpoint (in case `max_steps` is not None)
                         if self.max_steps is not None and metrics.global_step >= self.max_steps:
+                            overwatch.info(f"Saving checkpoint at end of epoch {epoch}...")
                             self.save_checkpoint(metrics.run_dir, metrics.global_step, epoch, loss.item())
                             dist.barrier()
 
@@ -237,6 +245,7 @@ class TrainingStrategy(ABC):
 
             # Save checkpoint at end each epoch (if `self.max_steps` is None)
             if self.max_steps is None:
+                overwatch.info(f"Saving checkpoint at end of epoch {epoch}...")
                 self.save_checkpoint(metrics.run_dir, metrics.global_step, epoch, loss.item())
                 dist.barrier()
 

@@ -44,6 +44,8 @@ class VLAConfig(ChoiceRegistry):
     max_grad_norm: float                            # Max Grad Norm (for global gradient clipping)
     lr_scheduler_type: str                          # LR Scheduler (usually: "constant" | "linear-warmup+cosine-decay")
     warmup_ratio: float                             # Fraction of Steps to Warmup (for warmup LR schedulers)
+    beta1: float                                    # AdamW Beta1 (default 0.9)
+    beta2: float                                    # AdamW Beta2 (default 0.999)
 
     train_strategy: str                             # Train Strategy (default "fsdp-full-shard")
 
@@ -87,6 +89,8 @@ class Exp_SigLIP_224px_Bridge(VLAConfig):
     max_grad_norm: float = 1.0
     lr_scheduler_type: str = "constant"
     warmup_ratio: float = 0.0
+    beta1: float = 0.9
+    beta2: float = 0.999
 
     train_strategy: str = "fsdp-full-shard"
 
@@ -198,6 +202,38 @@ class Exp_SigLIP_224px_Droid_Wipe(Exp_SigLIP_224px_Bridge):
     data_mix: str = "droid_wipe"
 
 
+@dataclass
+class Openlm_VLA(VLAConfig):
+    vla_id: str = "openlm-vla"
+    base_vlm: Union[str, Path] = "openlm"
+
+    freeze_vision_backbone: bool = False
+    freeze_llm_backbone: bool = False
+    unfreeze_last_llm_layer: bool = True
+
+    # Data Mixture Parameters
+    data_mix: str = "bridge"
+    shuffle_buffer_size: int = 256_000
+
+    # Optimization Parameters
+    epochs: int = 1000
+    max_steps: Optional[int] = None
+
+    expected_world_size: int = 8
+    global_batch_size: int = 256
+    per_device_batch_size: int = 32
+
+    learning_rate: float = 2e-5
+    weight_decay: float = 0.0
+    max_grad_norm: float = 1.0
+    lr_scheduler_type: str = "constant"
+    warmup_ratio: float = 0.0
+    beta1: float = 0.9
+    beta2: float = 0.999
+
+    train_strategy: str = "fsdp-full-shard"
+
+
 # === Define a VLA Registry Enum for Reference & Validation ===
 @unique
 class VLARegistry(Enum):
@@ -224,6 +260,9 @@ class VLARegistry(Enum):
 
     # === DROID Fine-tuning Configs ===
     SIGLIP_224PX_MX_DROID_WIPE = Exp_SigLIP_224px_Droid_Wipe
+
+    # === OpenLM VLA ===
+    OPENLM_VLA = Openlm_VLA
 
     @property
     def vla_id(self) -> str:

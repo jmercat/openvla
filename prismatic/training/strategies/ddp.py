@@ -92,7 +92,7 @@ class DDPStrategy(TrainingStrategy):
             num_warmup_steps = int(num_training_steps * self.warmup_ratio)
 
             assert self.weight_decay == 0, "DDP training does not currently support `weight_decay` > 0!"
-            self.optimizer = AdamW(trainable_params, lr=self.learning_rate, weight_decay=self.weight_decay)
+            self.optimizer = AdamW(trainable_params, lr=self.learning_rate, weight_decay=self.weight_decay, betas=(self.beta1, self.beta2))
             self.lr_scheduler = get_cosine_schedule_with_warmup(self.optimizer, num_warmup_steps, num_training_steps)
             for param_group in self.optimizer.param_groups:
                 param_group["lr"] = 0.0
@@ -118,6 +118,7 @@ class DDPStrategy(TrainingStrategy):
             f"         |-> Use Native AMP = {self.enable_mixed_precision_training} ({self.mixed_precision_dtype})\n\n"
             f"         |-> Default AdamW LR = {self.learning_rate}\n"
             f"         |-> AdamW Weight Decay = {self.weight_decay}\n"
+            f"         |-> AdamW Betas = ({self.beta1}, {self.beta2})\n"
             f"         |-> LR Scheduler Type = {self.lr_scheduler_type}\n"
             f"         |-> LR Scheduler Warmup Steps (Ratio) = {num_warmup_steps} ({self.warmup_ratio})\n"
             f"         |-> Dataset Size = {n_train_examples} Examples\n"

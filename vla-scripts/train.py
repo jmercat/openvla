@@ -92,6 +92,8 @@ class TrainConfig:
         self.max_grad_norm = self.vla.max_grad_norm
         self.lr_scheduler_type = self.vla.lr_scheduler_type
         self.warmup_ratio = self.vla.warmup_ratio
+        self.beta1 = self.vla.beta1
+        self.beta2 = self.vla.beta2
 
         self.train_strategy = self.vla.train_strategy
 
@@ -216,6 +218,8 @@ def train(cfg: TrainConfig) -> None:
         per_device_batch_size=cfg.per_device_batch_size,
         learning_rate=cfg.learning_rate,
         weight_decay=cfg.weight_decay,
+        beta1=cfg.beta1,
+        beta2=cfg.beta2,
         max_grad_norm=cfg.max_grad_norm,
         lr_scheduler_type=cfg.lr_scheduler_type,
         warmup_ratio=cfg.warmup_ratio,

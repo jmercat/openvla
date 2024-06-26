@@ -13,7 +13,8 @@ from typing import List, Optional, Union
 from huggingface_hub import HfFileSystem, hf_hub_download
 
 from prismatic.conf import ModelConfig
-from prismatic.models.materialize import get_llm_backbone_and_tokenizer, get_vision_backbone_and_transform
+from prismatic.models.materialize import get_llm_backbone_and_tokenizer, get_vision_backbone_and_transform, get_vlm
+from prismatic.models.backbones.llm.openlm import get_vision_state_dict, get_projector_state_dict
 from prismatic.models.registry import GLOBAL_REGISTRY, MODEL_REGISTRY
 from prismatic.models.vlas import OpenVLA
 from prismatic.models.vlms import PrismaticVLM
@@ -54,6 +55,7 @@ def load(
     hf_token: Optional[str] = None,
     cache_dir: Optional[Union[str, Path]] = None,
     load_for_training: bool = False,
+    strict: bool = True,
 ) -> PrismaticVLM:
     """Loads a pretrained PrismaticVLM from either local disk or the HuggingFace Hub."""
     if os.path.isdir(model_id_or_path):
@@ -63,6 +65,39 @@ def load(
         config_json, checkpoint_pt = run_dir / "config.json", run_dir / "checkpoints" / "latest-checkpoint.pt"
         assert config_json.exists(), f"Missing `config.json` for `{run_dir = }`"
         assert checkpoint_pt.exists(), f"Missing checkpoint for `{run_dir = }`"
+    elif str(model_id_or_path).startswith("(openlm)") or str(model_id_or_path).startswith("(openvlm)"):
+        model_id_or_path = str(model_id_or_path)
+        not_from_pretrained_vlm = not model_id_or_path.startswith("(openvlm)")
+        vision_backbone, image_transform = get_vision_backbone_and_transform(
+            "dinosiglip-vit-so-384px",
+            "resize-naive",
+            dino_first=not_from_pretrained_vlm,
+            pretrained=not_from_pretrained_vlm
+        )
+        if model_id_or_path.startswith("(openvlm)"):
+            overwatch.info(f"Loading vision state dict from OpenVLM")
+            vision_state_dict = get_vision_state_dict(model_id_or_path)
+            vision_backbone.load_state_dict(vision_state_dict, strict=True)
+
+        llm_backbone, tokenizer = get_llm_backbone_and_tokenizer(
+            model_id_or_path,
+            llm_max_length=1024,
+            inference_mode=False,
+        )
+
+        vlm = get_vlm(
+            model_id_or_path,
+            "no-align+fused-gelu-mlp",
+            vision_backbone,
+            llm_backbone,
+            enable_mixed_precision_training=False
+        )
+
+        if model_id_or_path.startswith("(openvlm)"):
+            print("Loading projector state dict")
+            projector_state_dict = get_projector_state_dict(model_id_or_path)
+            vlm.projector.load_state_dict(projector_state_dict)
+        return vlm
     else:
         if model_id_or_path not in GLOBAL_REGISTRY:
             raise ValueError(f"Couldn't find `{model_id_or_path = }; check `prismatic.available_model_names()`")
@@ -89,14 +124,16 @@ def load(
     )
 
     # Load Vision Backbone
-    overwatch.info(f"Loading Vision Backbone [bold]{model_cfg['vision_backbone_id']}[/]")
+    overwatch.info(f"Creating Vision Backbone [bold]{model_cfg['vision_backbone_id']}[/]")
     vision_backbone, image_transform = get_vision_backbone_and_transform(
         model_cfg["vision_backbone_id"],
         model_cfg["image_resize_strategy"],
+        pretrained=False,  # We cannot really know if the vision backbone should be loaded or not here, the weight might or might not be in the checkpoint
+        dino_first=not model_cfg['llm_backbone_id'].startswith("(openvlm)"),
     )
 
     # Load LLM Backbone --> note `inference_mode = True` by default when calling `load()`
-    overwatch.info(f"Loading Pretrained LLM [bold]{model_cfg['llm_backbone_id']}[/] via HF Transformers")
+    overwatch.info(f"Creating Pretrained LLM [bold]{model_cfg['llm_backbone_id']}[/]")
     llm_backbone, tokenizer = get_llm_backbone_and_tokenizer(
         model_cfg["llm_backbone_id"],
         llm_max_length=model_cfg.get("llm_max_length", 2048),
@@ -113,6 +150,7 @@ def load(
         llm_backbone,
         arch_specifier=model_cfg["arch_specifier"],
         freeze_weights=not load_for_training,
+        strict=strict,
     )
 
     return vlm
