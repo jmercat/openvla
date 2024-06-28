@@ -50,12 +50,11 @@ class ActionTokenizer:
         """
         Returns continuous actions for discrete action token IDs.
 
-        NOTE (Moo Jin) =>> Because of the way the actions are discretized w.r.t. the bins (and not the bin centers),
-                           the digitization returns bin indices between [1, # bins], inclusive, when there are actually
-                           only (# bins - 1) bin intervals.
+        NOTE =>> Because of the way the actions are discretized w.r.t. the bins (and not the bin centers), the
+                 digitization returns bin indices between [1, # bins], inclusive, when there are actually only
+                 (# bins - 1) bin intervals.
 
-                           Therefore, if the digitization returns the last possible index, we just map this to the last
-                           bin interval.
+                 Therefore, if the digitization returns the last possible index, we map this to the last bin interval.
 
         EXAMPLE =>> Let's say self._bins has 256 values. Then self._bin_centers has 255 values. Digitization returns
                     indices between [1, 256]. We subtract 1 from all indices so that they are between [0, 255]. There

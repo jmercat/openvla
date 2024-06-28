@@ -174,5 +174,4 @@ def zero_action_filter(traj: Dict) -> bool:
         ]
     )
     DROID_NORM_0_ACT = 2 * (tf.zeros_like(traj["action"][:, :6]) - DROID_Q01) / (DROID_Q99 - DROID_Q01 + 1e-8) - 1
-    print("Filter")
     return tf.reduce_any(tf.math.abs(traj["action"][:, :6] - DROID_NORM_0_ACT) > 1e-5)

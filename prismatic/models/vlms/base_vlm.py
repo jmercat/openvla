@@ -49,6 +49,9 @@ class VLM(nn.Module, GenerationMixin, ABC):
         self.generation_config = self.llm_backbone.llm.generation_config
         self.main_input_name = "input_ids"
 
+        # variable specifying if tokenizer uses <BOS> token
+        self.bos_exists = self.llm_backbone.bos_exists
+
     @property
     def device(self) -> torch.device:
         """Borrowed from `transformers.modeling_utils.py` -- checks parameter device; assumes model on *ONE* device!"""

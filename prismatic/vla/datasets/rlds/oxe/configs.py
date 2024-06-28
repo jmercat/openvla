@@ -90,29 +90,6 @@ OXE_DATASET_CONFIGS = {
         "state_encoding": StateEncoding.POS_EULER,
         "action_encoding": ActionEncoding.EEF_POS,
     },
-    "ppgm": {  # Pre-trained Panda Grasping Model
-        "image_obs_keys": {"primary": "static_image", "secondary": None, "wrist": "wrist_image"},
-        "depth_obs_keys": {"primary": "static_depth_image", "secondary": None, "wrist": "wrist_depth_image"},
-        "state_obs_keys": ["EEF_state", None, "gripper_state"],
-        "state_encoding": StateEncoding.POS_EULER,
-        "action_encoding": ActionEncoding.EEF_POS,
-    },
-    "ppgm_static": {  # Pre-trained Panda Grasping Model - just third-person images
-        "rename": "ppgm",  # TODO (moojink) Hack: used to replace "ppgm_static" with "ppgm" when loading dataset
-        "image_obs_keys": {"primary": "static_image", "secondary": None, "wrist": None},
-        "depth_obs_keys": {"primary": "static_depth_image", "secondary": None, "wrist": None},
-        "state_obs_keys": ["EEF_state", None, "gripper_state"],
-        "state_encoding": StateEncoding.POS_EULER,
-        "action_encoding": ActionEncoding.EEF_POS,
-    },
-    "ppgm_wrist": {  # Pre-trained Panda Grasping Model - just wrist-camera images
-        "rename": "ppgm",  # TODO (moojink) Hack: used to replace "ppgm_static" with "ppgm" when loading dataset
-        "image_obs_keys": {"primary": "wrist_image", "secondary": None, "wrist": None},
-        "depth_obs_keys": {"primary": "wirst_depth_image", "secondary": None, "wrist": None},
-        "state_obs_keys": ["EEF_state", None, "gripper_state"],
-        "state_encoding": StateEncoding.POS_EULER,
-        "action_encoding": ActionEncoding.EEF_POS,
-    },
     "taco_play": {
         "image_obs_keys": {
             "primary": "rgb_static",

@@ -9,7 +9,7 @@ from typing import Optional, Tuple
 
 from transformers import PreTrainedTokenizerBase
 
-from prismatic.models.backbones.llm import LLaMa2LLMBackbone, LLMBackbone, MistralLLMBackbone, PhiLLMBackbone
+from prismatic.models.backbones.llm import LLaMa2LLMBackbone, LLMBackbone, OpenlmLLMBackbone, MistralLLMBackbone, PhiLLMBackbone
 from prismatic.models.backbones.vision import (
     CLIPViTBackbone,
     DinoCLIPViTBackbone,
@@ -64,6 +64,9 @@ LLM_BACKBONES = {
     "vicuna-v15-7b": {"cls": LLaMa2LLMBackbone, "kwargs": {}},
     "vicuna-v15-13b": {"cls": LLaMa2LLMBackbone, "kwargs": {}},
 
+    # === OpenLM Backbones ===
+    "openlm": {"cls": OpenlmLLMBackbone, "kwargs": {}},
+
     # === Mistral v0.1 Backbones ===
     "mistral-v0.1-7b-pure": {"cls": MistralLLMBackbone, "kwargs": {}},
     "mistral-v0.1-7b-instruct": {"cls": MistralLLMBackbone, "kwargs": {}},
@@ -76,13 +79,13 @@ LLM_BACKBONES = {
 
 
 def get_vision_backbone_and_transform(
-    vision_backbone_id: str, image_resize_strategy: str
+    vision_backbone_id: str, image_resize_strategy: str, dino_first: bool = True, pretrained: bool = True
 ) -> Tuple[VisionBackbone, ImageTransform]:
     """Instantiate a Vision Backbone, returning both the nn.Module wrapper class and default Image Transform."""
     if vision_backbone_id in VISION_BACKBONES:
         vision_cfg = VISION_BACKBONES[vision_backbone_id]
         vision_backbone: VisionBackbone = vision_cfg["cls"](
-            vision_backbone_id, image_resize_strategy, **vision_cfg["kwargs"]
+            vision_backbone_id, image_resize_strategy, dino_first=dino_first, pretrained=pretrained, **vision_cfg["kwargs"]
         )
         image_transform = vision_backbone.get_image_transform()
         return vision_backbone, image_transform
@@ -97,8 +100,13 @@ def get_llm_backbone_and_tokenizer(
     hf_token: Optional[str] = None,
     inference_mode: bool = False,
 ) -> Tuple[LLMBackbone, PreTrainedTokenizerBase]:
-    if llm_backbone_id in LLM_BACKBONES:
-        llm_cfg = LLM_BACKBONES[llm_backbone_id]
+    is_openlm = any(model in llm_backbone_id.lower() for model in ["openlm", "open_lm", "openvlm", "open_vlm"])
+    if is_openlm or llm_backbone_id in LLM_BACKBONES:
+        if is_openlm:
+            # Special Handling for OpenLM Backbones because it is a generic model
+            llm_cfg = LLM_BACKBONES["openlm"]
+        else:
+            llm_cfg = LLM_BACKBONES[llm_backbone_id]
         llm_backbone: LLMBackbone = llm_cfg["cls"](
             llm_backbone_id,
             llm_max_length=llm_max_length,

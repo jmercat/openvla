@@ -3,17 +3,17 @@ requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "prismatic"
+name = "openvla"
 authors = [
+    {name = "Moo Jin Kim", email="moojink@stanford.edu"},
+    {name = "Karl Pertsch", email="pertsch@berkeley.edu"},
     {name = "Siddharth Karamcheti", email="skaramcheti@cs.stanford.edu"},
-    {name = "Suraj Nair", email="suraj.nair@tri.global"},
-    {name = "Ashwin Balakrishna", email="ashwin.balakrishna@tri.global"},
 ]
-description = "Prismatic VLMs: Investigating the Design Space of Visually-Conditioned Language Models"
+description = "OpenVLA: Vision-Language-Action Models for Robotics"
 version = "0.0.3"
 readme = "README.md"
 requires-python = ">=3.8"
-keywords = ["vision-language models", "multimodal pretraining", "machine learning"]
+keywords = ["vision-language-actions models", "multimodal pretraining", "robot learning"]
 license = {file = "LICENSE"}
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -35,8 +35,10 @@ dependencies = [
     "einops",
     # "flash_attn==2.5.5",      # Here for documentation -- install *AFTER* editable install (follow README)
     "huggingface_hub",
+    "json-numpy",
     "jsonlines",
     "matplotlib",
+    "peft==0.11.1",
     "protobuf",
     "rich",
     "sentencepiece==0.1.99",
@@ -67,9 +69,9 @@ sagemaker = [
 ]
 
 [project.urls]
-homepage = "https://github.com/TRI-ML/prismatic-vlms"
-repository = "https://github.com/TRI-ML/prismatic-vlms"
-documentation = "https://github.com/TRI-ML/prismatic-vlms"
+homepage = "https://github.com/openvla/openvla"
+repository = "https://github.com/openvla/openvla"
+documentation = "https://github.com/openvla/openvla"
 
 [tool.setuptools.packages.find]
 where = ["."]

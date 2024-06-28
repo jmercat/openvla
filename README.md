@@ -123,18 +123,22 @@ If you run into any problems during the installation process, please file a GitH
 
 Once installed, loading and running inference with pretrained `prismatic` VLMs is easy:
 
-```python
-import requests
-import torch
+### VLA Pretraining Datasets
 
-from PIL import Image
-from pathlib import Path
+We download and preprocess individual datasets from Open X-Embodiment in [RLDS format](https://github.com/google-research/rlds) following 
+[this custom script](https://github.com/kpertsch/rlds_dataset_mod/blob/main/prepare_open_x.sh). See 
+[mixtures.py](./prismatic/vla/datasets/rlds/oxe/mixtures.py) for the full list of component datasets (and mixture 
+weights) we use to train `openvla-7b`. 
+- **Important**: For the BridgeData V2 component, the version in OXE is out of date (as of 12/20/2023). Instead,
+  you should download the dataset from the [official website](https://rail.eecs.berkeley.edu/datasets/bridge_release/data/tfds/bridge_dataset/) and place it under the subdirectory `bridge_orig/`. 
+  Replace any reference to `bridge` in the OXE code with `bridge_orig`.
 
-from prismatic import load
+### VLA Configuration & Training Script
 
-# For gated LMs like Llama-2, make sure to request official access, and generate an access token
-hf_token = Path(".hf_token").read_text().strip()
-device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+The entry point for VLA training is [`vla-scripts/train.py`](vla-scripts/train.py). We use 
+[`draccus`](https://pypi.org/project/draccus) to provide a modular, dataclass-based interface for specifying VLA 
+training configurations; existing VLA configurations are in [`prismatic/conf/vla.py`](prismatic/conf/vla.py). You can 
+add your own training configuration and refer to it using the `--vla.type` command line argument.
 
 # Load a pretrained VLM (either local path, or ID to auto-download from the HF Hub)
 model_id = "prism-dinosiglip+7b"
@@ -218,11 +222,13 @@ For the [LLaVa v1.5 Instruct Dataset](https://github.com/haotian-liu/LLaVA/blob/
 of our models, we provide an automated download script in [`scripts/preprocess.py`](scripts/preprocess.py):
 
 ```bash
-# Download the `llava-v1.5-instruct` (Instruct Tuning) Image and Language Data (includes extra post-processing)
-python scripts/preprocess.py --dataset_id "llava-v1.5-instruct" --root_dir <PATH-TO-DATA-ROOT>
-
-# (In case you also wish to download the explicit vision-language alignment data)
-python scripts/preprocess.py --dataset_id "llava-laion-cc-sbu-558k" --root_dir <PATH-TO-DATA-ROOT>
+# Train VLA on BridgeData V2 with the Prismatic DINO-SigLIP 224px Backbone on a Single Node (w/ 8 GPUs)
+torchrun --standalone --nnodes 1 --nproc-per-node 8 vla-scripts/train.py \
+  --vla.type "prism-dinosiglip-224px+mx-bridge" \
+  --data_root_dir <PATH TO OXE DATA ROOT> \
+  --run_root_dir <PATH TO LOG/CHECKPOINT ROOT> \
+  --wandb_project "<PROJECT>" \
+  --wandb_entity "<ENTITY>"
 ```
 
 As part of our work, we also train on mixtures of datasets including
@@ -253,6 +259,7 @@ torchrun --standalone --nnodes 1 --nproc-per-node 8 scripts/pretrain.py \
   --model.image_resize_strategy "letterbox" \
   --model.llm_backbone_id "vicuna-v15-7b"
 ```
+- **Fix**: Downgrade `tensorflow-datasets` via `pip install tensorflow-datasets==4.9.3`.
 
 Note that specifying `model.type` is important for identifying the _base configuration_ that you want to build on top of;
 the full list of model types are available in our [config file](prismatic/conf/models.py), under the `model_id` key for

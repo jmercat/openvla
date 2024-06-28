@@ -12,7 +12,7 @@ from typing import Any, Dict, Tuple, Type
 import numpy as np
 import torch
 from PIL import Image
-from torch.utils.data import IterableDataset
+from torch.utils.data import Dataset, IterableDataset
 from transformers import PreTrainedTokenizerBase
 
 from prismatic.models.backbones.llm.prompting import PromptBuilder
@@ -179,15 +179,14 @@ class EpisodicRLDSDataset(RLDSDataset):
             yield out
 
 
-class DummyDataset(torch.utils.data.Dataset):
-
+class DummyDataset(Dataset):
     def __init__(
         self,
         action_tokenizer: ActionTokenizer,
         base_tokenizer: PreTrainedTokenizerBase,
         image_transform: ImageTransform,
         prompt_builder_fn: Type[PromptBuilder],
-    ):
+    ) -> None:
         self.action_tokenizer = action_tokenizer
         self.base_tokenizer = base_tokenizer
         self.image_transform = image_transform
@@ -206,16 +205,16 @@ class DummyDataset(torch.utils.data.Dataset):
         }
 
     def __len__(self):
-        # [TODO]: Replace with number of elements in your dataset
+        # TODO =>> Replace with number of elements in your dataset!
         return 10000
 
     def __getitem__(self, idx):
-        # [TODO]: Load image, action and instruction from disk -- we use dummy values
+        # TODO =>> Load image, action and instruction from disk -- we use dummy values
         image = Image.fromarray(np.asarray(np.random.rand(224, 224, 3) * 255.0, dtype=np.uint8))
         action = np.asarray(np.random.rand(7), dtype=np.float32)
-        instruction = "do something"
+        instruction = "do something spectacular"
 
-        # Add instruction into VLA prompt
+        # Add instruction to VLA prompt
         prompt_builder = self.prompt_builder_fn("openvla")
         conversation = [
             {"from": "human", "value": f"What action should the robot take to {instruction}?"},
@@ -229,7 +228,7 @@ class DummyDataset(torch.utils.data.Dataset):
         labels = list(input_ids)
 
         # Tensorize =>> Run Image Transform to get `pixel_values` =>> Return
-        #   =>> IMPORTANT :: IF WE'RE USING HF LLM.forward(..., labels=labels), SHIFTING HAPPENS _INSIDE_ MODEL!
+        #   =>> IMPORTANT :: IF WE'RE USING HF .forward(..., labels=labels), SHIFTING HAPPENS _INSIDE_ MODEL!
         input_ids, labels = torch.tensor(input_ids), torch.tensor(labels)
         pixel_values = self.image_transform(image)
 

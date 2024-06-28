@@ -54,9 +54,9 @@ class TrainConfig:
 
     # Directory Paths
     data_root_dir: Path = Path(                                     # Path to Open-X dataset directory
-        "/mnt/fsx/surajnair/datasets/openx_processed"
+        "datasets/open-x-embodiment"
     )
-    run_root_dir: Path = Path("/mnt/fsx/x-openvla/runs")            # Path to directory to store logs & checkpoints
+    run_root_dir: Path = Path("runs")                               # Path to directory to store logs & checkpoints
 
     # Resume Run Parameters
     pretrained_checkpoint: Optional[Path] = None                    # Absolute Path to Checkpoint
@@ -80,8 +80,6 @@ class TrainConfig:
     wandb_project: str = "openvla"                                  # Name of W&B project to log to (use default!)
     wandb_entity: str = "stanford-voltron"                          # Name of entity to log under
 
-    # fmt: on
-
     def __post_init__(self) -> None:
         """Lift optimization parameters from `self.vla` for ease of use =>> validate on `expected_world_size`"""
         self.epochs = self.vla.epochs
@@ -94,6 +92,8 @@ class TrainConfig:
         self.max_grad_norm = self.vla.max_grad_norm
         self.lr_scheduler_type = self.vla.lr_scheduler_type
         self.warmup_ratio = self.vla.warmup_ratio
+        self.beta1 = self.vla.beta1
+        self.beta2 = self.vla.beta2
 
         self.train_strategy = self.vla.train_strategy
 
@@ -156,7 +156,7 @@ def train(cfg: TrainConfig) -> None:
     for param in vlm.parameters():
         assert param.dtype == torch.float32, f"Loaded VLM parameter not in full precision: {param}"
 
-    # Determine training "stage" based on frozen vs unfrozen parameters
+    # Determine training "stage" based on frozen vs unfrozen parameters --> supports different fine-tuning schemes!
     if not cfg.vla.freeze_vision_backbone and not cfg.vla.freeze_llm_backbone:
         stage = "vla-full-train"  # Full fine-tuning
     elif cfg.vla.freeze_vision_backbone and not cfg.vla.freeze_llm_backbone:
@@ -183,7 +183,7 @@ def train(cfg: TrainConfig) -> None:
     num_params = sum(p.numel() for p in vlm.parameters())
     num_trainable_params = sum(p.numel() for p in vlm.parameters() if p.requires_grad)
     overwatch.info(
-        f"# parameters (in millions): {num_params / 10**6:.3f} total, {num_trainable_params / 10**6:.3f} trainable"
+        f"# Parameters (in millions): {num_params / 10**6:.3f} Total, {num_trainable_params / 10**6:.3f} Trainable"
     )
 
     # Get VLA Dataset & Collator
@@ -216,6 +216,8 @@ def train(cfg: TrainConfig) -> None:
         per_device_batch_size=cfg.per_device_batch_size,
         learning_rate=cfg.learning_rate,
         weight_decay=cfg.weight_decay,
+        beta1=cfg.beta1,
+        beta2=cfg.beta2,
         max_grad_norm=cfg.max_grad_norm,
         lr_scheduler_type=cfg.lr_scheduler_type,
         warmup_ratio=cfg.warmup_ratio,

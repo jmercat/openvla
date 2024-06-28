@@ -2,8 +2,6 @@
 dataset.py
 
 Core interface script for configuring and initializing RLDS datasets.
-
-TODO (siddk) :: Refactor?
 """
 
 import copy

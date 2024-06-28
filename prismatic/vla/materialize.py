@@ -32,7 +32,7 @@ def get_vla_dataset_and_collator(
     episodic: bool = False,
     image_aug: bool = False,
 ) -> Tuple[Dataset, ActionTokenizer, PaddedCollatorForActionPrediction]:
-    # Instantiate VLA ActionTokenizer (extends base tokenizer)
+    """Initialize RLDS Dataset (wraps TFDS), ActionTokenizer, and initialize transform/collation functions."""
     action_tokenizer = ActionTokenizer(tokenizer)
     batch_transform = RLDSBatchTransform(
         action_tokenizer, tokenizer, image_transform, prompt_builder_fn, predict_stop_token=predict_stop_token
@@ -41,7 +41,7 @@ def get_vla_dataset_and_collator(
         tokenizer.model_max_length, tokenizer.pad_token_id, padding_side=padding_side
     )
 
-    # Build RLDS Iterable Dataset & Return
+    # Build RLDS Iterable Dataset
     cls = RLDSDataset if not episodic else EpisodicRLDSDataset
     dataset = cls(
         data_root_dir,

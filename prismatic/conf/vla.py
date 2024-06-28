@@ -44,6 +44,8 @@ class VLAConfig(ChoiceRegistry):
     max_grad_norm: float                            # Max Grad Norm (for global gradient clipping)
     lr_scheduler_type: str                          # LR Scheduler (usually: "constant" | "linear-warmup+cosine-decay")
     warmup_ratio: float                             # Fraction of Steps to Warmup (for warmup LR schedulers)
+    beta1: float                                    # AdamW Beta1 (default 0.9)
+    beta2: float                                    # AdamW Beta2 (default 0.999)
 
     train_strategy: str                             # Train Strategy (default "fsdp-full-shard")
 
@@ -62,6 +64,15 @@ class VLAConfig(ChoiceRegistry):
 class Exp_LLaVa15_Bridge(VLAConfig):
     vla_id: str = "reproduction-llava-v15+mx-bridge"
     base_vlm: Union[str, Path] = "reproduction-llava-v15+7b"
+
+    
+# === OpenVLA Training Configurations ===
+# = [8 GPU] Fast Iteration =>> SigLIP 224px + Bridge =
+@dataclass
+class Exp_SigLIP_224px_Bridge(VLAConfig):
+    vla_id: str = "siglip-224px+mx-bridge"
+    base_vlm: Union[str, Path] = "siglip-224px+7b"
+
     freeze_vision_backbone: bool = False
     freeze_llm_backbone: bool = False
     unfreeze_last_llm_layer: bool = False
@@ -78,25 +89,20 @@ class Exp_LLaVa15_Bridge(VLAConfig):
     global_batch_size: int = 256
     per_device_batch_size: int = 32
 
-    learning_rate: float = 5e-6
+    learning_rate: float = 2e-5
     weight_decay: float = 0.0
     max_grad_norm: float = 1.0
     lr_scheduler_type: str = "constant"
     warmup_ratio: float = 0.0
+    beta1: float = 0.9
+    beta2: float = 0.999
 
     train_strategy: str = "fsdp-full-shard"
 
 
-# === [8 GPU] Fast Iteration =>> SigLIP 224px + Bridge ===
+# = [8 GPU] SigLIP 224px Frozen Vision Backbone + Bridge =
 @dataclass
-class Exp_SigLIP_224px_Bridge(Exp_LLaVa15_Bridge):
-    vla_id: str = "siglip-224px+mx-bridge"
-    base_vlm: Union[str, Path] = "siglip-224px+7b"
-
-
-# === [8 GPU] SigLIP 224px Frozen Vision Backbone + Bridge ===
-@dataclass
-class Exp_FreezeVIT_SigLIP_224px_Bridge(Exp_LLaVa15_Bridge):
+class Exp_FreezeVIT_SigLIP_224px_Bridge(Exp_SigLIP_224px_Bridge):
     vla_id: str = "siglip-224px-icy+mx-bridge"
     base_vlm: Union[str, Path] = "siglip-224px+7b"
     freeze_vision_backbone: bool = True
@@ -166,9 +172,9 @@ class Exp_LR1E4_SigLIP_224px_Bridge(Exp_LLaVa15_Bridge):
     learning_rate: float = 1e-4
 
 
-# === [64 GPU] SigLIP 224px + OXE Magic Soup ===
+# = [64 GPU] SigLIP 224px + OXE Magic Soup =
 @dataclass
-class Exp_SigLIP_224px_OXE_Magic_Soup(Exp_LLaVa15_Bridge):
+class Exp_SigLIP_224px_OXE_Magic_Soup(Exp_SigLIP_224px_Bridge):
     vla_id: str = "siglip-224px+mx-oxe-magic-soup"
     base_vlm: Union[str, Path] = "siglip-224px+7b"
 
@@ -186,7 +192,6 @@ class Exp_SigLIP_224px_OXE_Magic_Soup(Exp_LLaVa15_Bridge):
 class Exp_SigLIP_224px_DROID(Exp_LLaVa15_Bridge):
     vla_id: str = "siglip-224px+mx-droid"
     base_vlm: Union[str, Path] = "siglip-224px+7b"
-
     data_mix: str = "droid"
 
 
@@ -200,12 +205,13 @@ class Exp_DinoSigLIP_224px_Bridge(Exp_LLaVa15_Bridge):
     learning_rate: float = 2e-5
 
 
-# === [64 GPU] DINO-SigLIP 224px + OXE Magic Soup++ ===
+# = [64 GPU] DINO-SigLIP 224px + OXE Magic Soup++ =
 @dataclass
-class Exp_DinoSigLIP_224px_OXE_Magic_Soup_Plus(Exp_LLaVa15_Bridge):
+class Exp_DinoSigLIP_224px_OXE_Magic_Soup_Plus(Exp_SigLIP_224px_Bridge):
     vla_id: str = "prism-dinosiglip-224px+mx-oxe-magic-soup-plus"
     base_vlm: Union[str, Path] = "prism-dinosiglip-224px+7b"
 
+    # Note =>> We adopt two stages, training on a mixture including DROID for 70% of training, before resampling!
     # data_mix: str = "oxe_magic_soup_plus"
     data_mix: str = "oxe_magic_soup_plus_minus"
 
@@ -226,9 +232,9 @@ class Exp_SigLIP_224px_LIBERO_Spatial(Exp_LLaVa15_Bridge):
     learning_rate: float = 2e-5
 
 
-# === [8 GPU] SigLIP 224px + T-DROID ===
+# = [8 GPU] SigLIP 224px + T-DROID =
 @dataclass
-class Exp_SigLIP_224px_Tdroid_CarrotInBowl(Exp_LLaVa15_Bridge):
+class Exp_SigLIP_224px_TDROID_CarrotInBowl(Exp_SigLIP_224px_Bridge):
     vla_id: str = "siglip-224px+mx-tdroid_carrot_in_bowl"
     base_vlm: Union[str, Path] = "siglip-224px+7b"
 
@@ -237,7 +243,7 @@ class Exp_SigLIP_224px_Tdroid_CarrotInBowl(Exp_LLaVa15_Bridge):
 
 
 @dataclass
-class Exp_SigLIP_224px_Tdroid_PourCornInPot(Exp_LLaVa15_Bridge):
+class Exp_SigLIP_224px_TDROID_PourCornInPot(Exp_SigLIP_224px_Bridge):
     vla_id: str = "siglip-224px+mx-tdroid_pour_corn_in_pot"
     base_vlm: Union[str, Path] = "siglip-224px+7b"
 
@@ -245,9 +251,9 @@ class Exp_SigLIP_224px_Tdroid_PourCornInPot(Exp_LLaVa15_Bridge):
     learning_rate: float = 2e-5
 
 
-# === [8 GPU] SigLIP 224px + T-DROID -- Partial Finetuning ===
+# = [8 GPU] SigLIP 224px + T-DROID -- Partial Finetuning =
 @dataclass
-class Exp_SigLIP_224px_Icy_Tdroid_CarrotInBowl(Exp_LLaVa15_Bridge):
+class Exp_SigLIP_224px_Icy_TDROID_CarrotInBowl(Exp_SigLIP_224px_Bridge):
     vla_id: str = "siglip-224px-icy+mx-tdroid_carrot_in_bowl"
     base_vlm: Union[str, Path] = "siglip-224px+7b"
     freeze_vision_backbone: bool = True
@@ -258,7 +264,7 @@ class Exp_SigLIP_224px_Icy_Tdroid_CarrotInBowl(Exp_LLaVa15_Bridge):
 
 
 @dataclass
-class Exp_SigLIP_224px_LastLayer_Tdroid_CarrotInBowl(Exp_LLaVa15_Bridge):
+class Exp_SigLIP_224px_LastLayer_TDROID_CarrotInBowl(Exp_SigLIP_224px_Bridge):
     vla_id: str = "siglip-224px-last_layer+mx-tdroid_carrot_in_bowl"
     base_vlm: Union[str, Path] = "siglip-224px+7b"
     freeze_vision_backbone: bool = True
@@ -270,7 +276,7 @@ class Exp_SigLIP_224px_LastLayer_Tdroid_CarrotInBowl(Exp_LLaVa15_Bridge):
 
 
 @dataclass
-class Exp_SigLIP_224px_Sandwich_Tdroid_CarrotInBowl(Exp_LLaVa15_Bridge):
+class Exp_SigLIP_224px_Sandwich_TDROID_CarrotInBowl(Exp_SigLIP_224px_Bridge):
     vla_id: str = "siglip-224px-sandwich+mx-tdroid_carrot_in_bowl"
     base_vlm: Union[str, Path] = "siglip-224px+7b"
     freeze_vision_backbone: bool = False
@@ -283,7 +289,7 @@ class Exp_SigLIP_224px_Sandwich_Tdroid_CarrotInBowl(Exp_LLaVa15_Bridge):
 
 # === [8 GPU] SigLIP 224px + FrankaWipe ===
 @dataclass
-class Exp_SigLIP_224px_Droid_Wipe(Exp_LLaVa15_Bridge):
+class Exp_SigLIP_224px_Droid_Wipe(Exp_SigLIP_224px_Bridge):
     vla_id: str = "siglip-224px+mx-droid_wipe"
     base_vlm: Union[str, Path] = "siglip-224px+7b"
 
@@ -291,52 +297,70 @@ class Exp_SigLIP_224px_Droid_Wipe(Exp_LLaVa15_Bridge):
     learning_rate: float = 2e-5
 
 
+
+@dataclass
+class Openlm_VLA(VLAConfig):
+    vla_id: str = "openlm-vla"
+    base_vlm: Union[str, Path] = "openlm"
+
+    freeze_vision_backbone: bool = False
+    freeze_llm_backbone: bool = False
+    unfreeze_last_llm_layer: bool = True
+
+    # Data Mixture Parameters
+    data_mix: str = "bridge"
+    shuffle_buffer_size: int = 256_000
+
+    # Optimization Parameters
+    epochs: int = 1000
+    max_steps: Optional[int] = None
+
+    expected_world_size: int = 8
+    global_batch_size: int = 256
+    per_device_batch_size: int = 32
+
+    learning_rate: float = 2e-5
+    weight_decay: float = 0.0
+    max_grad_norm: float = 1.0
+    lr_scheduler_type: str = "constant"
+    warmup_ratio: float = 0.0
+    beta1: float = 0.9
+    beta2: float = 0.999
+
+    train_strategy: str = "fsdp-full-shard"
+
+
+
 # === Define a VLA Registry Enum for Reference & Validation ===
 @unique
 class VLARegistry(Enum):
-    LLAVA_REPRO_MX_BRIDGE = Exp_LLaVa15_Bridge
+
+    # Sanity Check Configurations =>> BridgeV2
     SIGLIP_224PX_MX_BRIDGE = Exp_SigLIP_224px_Bridge
-
-    # Initial SigLIP Frozen Backbone Experiment
-    FREEZE_SIGLIP_224PX_MX_BRIDGE = Exp_FreezeVIT_SigLIP_224px_Bridge
-
-    # [03/12] Additional Frozen Backbone Experiments + DINOSigLIP + SigLIP LR Sweep (Shallow)
-    FREEZE_LLAVA_REPRO_MX_BRIDGE = Exp_FreezeVIT_LLaVa15_Bridge
-
-    DINOSIGLIP_384PX_MX_BRIDGE = Exp_DINOSigLIP_384px_Bridge
-    FREEZE_DINOSIGLIP_384PX_MX_BRIDGE = Exp_FreezeVIT_DINOSigLIP_384px_Bridge
-
-    LR_1E5_SIGLIP_224PX_MX_BRIDGE = Exp_LR1E5_SigLIP_224px_Bridge
-    LR_2E5_SIGLIP_224PX_MX_BRIDGE = Exp_LR2E5_SigLIP_224px_Bridge
-    LR_4E5_SIGLIP_224PX_MX_BRIDGE = Exp_LR4E5_SigLIP_224px_Bridge
-    LR_1E4_SIGLIP_224PX_MX_BRIDGE = Exp_LR1E4_SigLIP_224px_Bridge
-
-    # [03/21] OXE Magic Soup Run
-    SIGLIP_224PX_MX_OXE_MAGIC_SOUP = Exp_SigLIP_224px_OXE_Magic_Soup
-
-    # [03/28] DROID Experiments
-    SIGLIP_224PX_MX_DROID = Exp_SigLIP_224px_DROID
-
-    # [05/07] DinoSiglip + Bridge
     DINOSIGLIP_224PX_MX_BRIDGE = Exp_DinoSigLIP_224px_Bridge
 
-    # [04/18] OXE Magic Soup Plus Run
+    # SigLIP Frozen Backbone Experiment
+    FREEZE_SIGLIP_224PX_MX_BRIDGE = Exp_FreezeVIT_SigLIP_224px_Bridge
+
+    # [OpenVLA v0.1 7B] SigLIP 224px + OXE Magic Soup
+    SIGLIP_224PX_MX_OXE_MAGIC_SOUP = Exp_SigLIP_224px_OXE_Magic_Soup
+
+    # [OpenVLA 7B] DINO + SigLIP 224px + OXE Magic Soup++
     DINOSIGLIP_224PX_MX_OXE_MAGIC_SOUP_PLUS = Exp_DinoSigLIP_224px_OXE_Magic_Soup_Plus
 
-    # [04/25] Libero Run
-    SIGLIP_224PX_MX_LIBERO_SPATIAL = Exp_SigLIP_224px_LIBERO_Spatial
+    # === TDROID Fine-tuning Configs ===
+    SIGLIP_224PX_MX_TDROID_CARROT_IN_BOWL = Exp_SigLIP_224px_TDROID_CarrotInBowl
+    SIGLIP_224PX_MX_TDROID_POUR_CORN_IN_POT = Exp_SigLIP_224px_TDROID_PourCornInPot
 
-    # [05/08] T-DROID Runs
-    SIGLIP_224PX_MX_TDROID_CARROT_IN_BOWL = Exp_SigLIP_224px_Tdroid_CarrotInBowl
-    SIGLIP_224PX_MX_TDROID_POUR_CORN_IN_POT = Exp_SigLIP_224px_Tdroid_PourCornInPot
+    SIGLIP_224PX_ICY_MX_TDROID_CARROT_IN_BOWL = Exp_SigLIP_224px_Icy_TDROID_CarrotInBowl
+    SIGLIP_224PX_LASTLAYER_MX_TDROID_CARROT_IN_BOWL = Exp_SigLIP_224px_LastLayer_TDROID_CarrotInBowl
+    SIGLIP_224PX_SANDWICH_MX_TDROID_CARROT_IN_BOWL = Exp_SigLIP_224px_Sandwich_TDROID_CarrotInBowl
 
-    # [05/08] T-DROID Partial Finetuning Runs
-    SIGLIP_224PX_ICY_MX_TDROID_CARROT_IN_BOWL = Exp_SigLIP_224px_Icy_Tdroid_CarrotInBowl
-    SIGLIP_224PX_LASTLAYER_MX_TDROID_CARROT_IN_BOWL = Exp_SigLIP_224px_LastLayer_Tdroid_CarrotInBowl
-    SIGLIP_224PX_SANDWICH_MX_TDROID_CARROT_IN_BOWL = Exp_SigLIP_224px_Sandwich_Tdroid_CarrotInBowl
-
-    # [05/14] DROID Wipe Runs
+    # === DROID Fine-tuning Configs ===
     SIGLIP_224PX_MX_DROID_WIPE = Exp_SigLIP_224px_Droid_Wipe
+
+    # === OpenLM VLA ===
+    OPENLM_VLA = Openlm_VLA
 
     @property
     def vla_id(self) -> str:

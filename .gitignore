@@ -154,4 +154,6 @@ data/
 rollouts/
 
 # Default Log Directory
+llm_checkpoints/
+vlm_checkpoints/
 runs/

@@ -49,6 +49,8 @@ class FSDPStrategy(TrainingStrategy):
         per_device_batch_size: int,
         learning_rate: float,
         weight_decay: float,
+        beta1: float,
+        beta2: float,
         max_grad_norm: float,
         lr_scheduler_type: str,
         warmup_ratio: float,
@@ -70,6 +72,8 @@ class FSDPStrategy(TrainingStrategy):
             per_device_batch_size=per_device_batch_size,
             learning_rate=learning_rate,
             weight_decay=weight_decay,
+            beta1=beta1,
+            beta2=beta2,
             max_grad_norm=max_grad_norm,
             lr_scheduler_type=lr_scheduler_type,
             warmup_ratio=warmup_ratio,
@@ -140,9 +144,9 @@ class FSDPStrategy(TrainingStrategy):
         if self.enable_mixed_precision_training and self.mixed_precision_dtype == torch.bfloat16:
             # MixedPrecision `param_dtype` specifies *compute* dtype (for forward/backward only)
             #   => Reference: https://pytorch.org/docs/stable/fsdp.html#torch.distributed.fsdp.MixedPrecision
-            reduce_buffer_dtype = torch.bfloat16 if not self.reduce_in_full_precision else torch.float32
+            reduce_dtype = torch.bfloat16 if not self.reduce_in_full_precision else torch.float32
             fsdp_precision_policy = MixedPrecision(
-                param_dtype=torch.bfloat16, reduce_dtype=reduce_buffer_dtype, buffer_dtype=reduce_buffer_dtype
+                param_dtype=torch.bfloat16, reduce_dtype=reduce_dtype, buffer_dtype=torch.bfloat16
             )
 
             # When running FSDP with a frozen vision backbone --> move to half precision!
@@ -180,7 +184,11 @@ class FSDPStrategy(TrainingStrategy):
                 return isinstance(submodule, self.llm_transformer_layer_cls)
 
             # Note that the terms "activation checkpointing" and "gradient checkpointing" are synonymous!
-            apply_activation_checkpointing(self.vlm, checkpoint_wrapper_fn=non_reentrant_wrapper, check_fn=check_fn)
+            if self.vlm.llm_backbone.llm_family == "open_lm":
+                self.vlm.llm_backbone.enable_gradient_checkpointing()
+                apply_activation_checkpointing(self.vlm.vision_backbone, checkpoint_wrapper_fn=non_reentrant_wrapper, check_fn=check_fn)
+            else:
+                apply_activation_checkpointing(self.vlm, checkpoint_wrapper_fn=non_reentrant_wrapper, check_fn=check_fn)
 
         # Barrier =>> Sharding takes a minute?
         dist.barrier()
@@ -214,7 +222,7 @@ class FSDPStrategy(TrainingStrategy):
             groups = [{"params": decay, "weight_decay": self.weight_decay}, {"params": no_decay, "weight_decay": 0.0}]
 
             # Create Optimizer & LR Scheduler
-            self.optimizer = AdamW(groups, lr=self.learning_rate)
+            self.optimizer = AdamW(groups, lr=self.learning_rate, betas=(self.beta1, self.beta2))
             self.lr_scheduler = get_cosine_schedule_with_warmup(self.optimizer, num_warmup_steps, num_training_steps)
             for param_group in self.optimizer.param_groups:
                 param_group["lr"] = 0.0
@@ -239,7 +247,7 @@ class FSDPStrategy(TrainingStrategy):
             groups = [{"params": decay, "weight_decay": self.weight_decay}, {"params": no_decay, "weight_decay": 0.0}]
 
             # Create Optimizer & LR Scheduler
-            self.optimizer = AdamW(groups, lr=self.learning_rate)
+            self.optimizer = AdamW(groups, lr=self.learning_rate, betas=(self.beta1, self.beta2))
             self.lr_scheduler = get_constant_schedule(self.optimizer)
 
         else:
@@ -259,6 +267,7 @@ class FSDPStrategy(TrainingStrategy):
             f"                 |-> Buffer Precision = {fsdp_precision_policy.buffer_dtype}\n\n"
             f"         |-> Default AdamW LR = {self.learning_rate}\n"
             f"         |-> AdamW Weight Decay = {self.weight_decay}\n"
+            f"         |-> AdamW Betas = ({self.beta1}, {self.beta2})\n"
             f"         |-> LR Scheduler Type = {self.lr_scheduler_type}\n"
             f"         |-> LR Scheduler Warmup Steps (Ratio) = {num_warmup_steps} ({self.warmup_ratio})\n"
             f"         |-> Dataset Size = {n_train_examples} Examples\n"

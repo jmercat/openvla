@@ -12,8 +12,7 @@ from PIL import Image
 from transformers import AutoModelForVision2Seq, AutoProcessor
 
 # === Verification Arguments ===
-# MODEL_PATH = "TRI-ML/prismatic-siglip-224px-7b"
-MODEL_PATH = "TRI-ML/prismatic-prism-dinosiglip-224px-7b"
+MODEL_PATH = "TRI-ML/prismatic-siglip-224px-7b"
 DEFAULT_IMAGE_URL = (
     "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/beignets-task-guide.png"
 )
@@ -107,17 +106,13 @@ def verify_prismatic() -> None:
         # with torch.autocast("cuda", dtype=torch.bfloat16, enabled=True):
         #     gen_ids = vlm.generate(**inputs, do_sample=False, min_length=1, max_length=512)
 
-        # === NATIVE BFLOAT16 MODE  ===
+        # === BFLOAT16 MODE ===
         inputs = processor(prompt, image).to(device, dtype=torch.bfloat16)
 
         # === 8-BIT/4-BIT QUANTIZATION MODE ===
         # inputs = processor(prompt, image).to(device, dtype=torch.float16)
 
-        # Burn-In
-        for _ in range(3):
-            _ = vlm.generate(**inputs, do_sample=False, min_length=1, max_length=512)
-
-        # Benchmark
+        # Run Inference
         gen_ids = None
         for _ in range(5):
             start_time = time.time()
@@ -132,7 +127,7 @@ def verify_prismatic() -> None:
         print(f"[{idx + 1}] Input Prompt => {prompt}\n    Generated    => {gen_text}\n")
 
     # Compute Tokens / Second
-    print(f"[*] Tokens per Second = {num_tokens / total_time} w/ {num_tokens = } and {total_time = }")
+    print(f"[*] Generated Tokens per Second = {num_tokens / total_time} w/ {num_tokens = } and {total_time = }")
 
 
 if __name__ == "__main__":
